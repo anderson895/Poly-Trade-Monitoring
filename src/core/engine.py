@@ -48,7 +48,7 @@ from src.strategy.mean_reversion import (
     target_side,
 )
 
-DEFAULT_RISK_USDC = 20.0
+DEFAULT_RISK_USDC = 200.0
 
 
 class BotState(Enum):

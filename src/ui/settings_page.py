@@ -27,7 +27,7 @@ from src.ui import theme
 from src.ui.widgets import Card
 
 DEFAULTS = {
-    "risk_usdc": 20.0,
+    "risk_usdc": 200.0,
     "min_stretch_pct": 1.5,
     "max_stretch_pct": 2.5,
     "profit_target_pct": 100.0,
