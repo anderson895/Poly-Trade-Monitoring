@@ -6,9 +6,12 @@ tapos ini-report sa UI via callback.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Callable, Optional
 
 import httpx
+
+filelog = logging.getLogger("polytrade.status")
 
 CHECK_INTERVAL = 15  # seconds
 
@@ -29,6 +32,7 @@ class ConnectionMonitor:
     def __init__(self, on_status: StatusCallback) -> None:
         self._on_status = on_status
         self._task: Optional[asyncio.Task] = None
+        self._last_state: dict[str, bool] = {}
 
     def start(self) -> None:
         if self._task is None or self._task.done():
@@ -52,8 +56,25 @@ class ConnectionMonitor:
                 await asyncio.sleep(CHECK_INTERVAL)
 
     async def _check(self, client: httpx.AsyncClient, name: str, url: str) -> None:
+        error: Optional[BaseException] = None
         try:
             resp = await client.get(url)
-            self._on_status(name, resp.status_code < 500)
-        except Exception:
-            self._on_status(name, False)
+            up = resp.status_code < 500
+            detail = f"HTTP {resp.status_code}"
+        except Exception as e:
+            up = False
+            error = e
+            detail = f"{type(e).__name__}: {e}"
+
+        # I-log lang kapag NAGBAGO ang estado — kasama ang eksaktong dahilan,
+        # para makita sa app.log kung bakit "Disconnected" ang isang service
+        if self._last_state.get(name) != up:
+            self._last_state[name] = up
+            if up:
+                filelog.info("%s: CONNECTED (%s)", name, detail)
+            else:
+                filelog.warning("%s: DISCONNECTED — %s (url: %s)", name, detail, url)
+                if error is not None:
+                    filelog.debug("%s traceback:", name, exc_info=error)
+
+        self._on_status(name, up)
