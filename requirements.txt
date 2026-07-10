@@ -1,0 +1,12 @@
+# Phase 1 dependencies
+PySide6>=6.6
+qasync>=0.27
+websockets>=12.0
+keyring>=24.0
+httpx>=0.27
+truststore>=0.9
+pyqtgraph>=0.13
+qtawesome>=1.4
+
+# Phase 3 (live execution)
+py-clob-client>=0.17
