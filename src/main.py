@@ -16,6 +16,10 @@ import truststore
 
 truststore.inject_into_ssl()  # gamitin ang Windows cert store para sa TLS
 
+from src.core.netdns import install_doh_resolver
+
+install_doh_resolver()  # DoH para sa *.polymarket.com — iwas sa ISP DNS poisoning
+
 import qasync
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
