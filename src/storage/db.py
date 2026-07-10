@@ -6,11 +6,14 @@ nasa Windows Credential Manager sila via core/secrets.py.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
-DB_DIR = Path(__file__).resolve().parents[2] / "data"
+from src.core.paths import DATA_DIR
+
+DB_DIR = DATA_DIR
 DB_PATH = DB_DIR / "bot.db"
 
 SCHEMA = """
@@ -115,6 +118,44 @@ class Database:
             "wins": row["wins"] or 0,
             "losses": row["losses"] or 0,
         }
+
+    # ------------------------------------------------------- open position
+
+    POSITION_KEY = "open_position"
+
+    def save_open_position(
+        self,
+        mode: str,
+        market: str,
+        side: str,
+        entry_price: float,
+        shares: float,
+        entry_ts: dt.datetime,
+    ) -> None:
+        """I-persist ang open position para ma-restore pagkatapos ng restart."""
+        self.set_setting(
+            self.POSITION_KEY,
+            json.dumps({
+                "mode": mode,
+                "market": market,
+                "side": side,
+                "entry_price": entry_price,
+                "shares": shares,
+                "entry_ts": entry_ts.isoformat(timespec="seconds"),
+            }),
+        )
+
+    def load_open_position(self) -> Optional[dict]:
+        raw = self.get_setting(self.POSITION_KEY)
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    def clear_open_position(self) -> None:
+        self.set_setting(self.POSITION_KEY, "")
 
     # ------------------------------------------------------------ settings
 

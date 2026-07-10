@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from src.core.engine import BotEngine
 from src.storage.db import Database
 from src.ui import theme
+from src.ui.alert_banner import AlertBanner
 from src.ui.dashboard_page import DashboardPage
 from src.ui.settings_page import SettingsPage
 from src.ui.widgets import Card
@@ -286,9 +287,13 @@ class MainWindow(QMainWindow):
         self.bottom.start_btn.clicked.connect(self._on_start)
         self.bottom.stop_btn.clicked.connect(self._on_stop)
 
+        # ---- Alert banner (errors/failed orders) ---------------------------
+        self.alert = AlertBanner()
+
         # ---- Layout --------------------------------------------------------
         content = QVBoxLayout()
         content.setContentsMargins(10, 14, 14, 14)
+        content.addWidget(self.alert)
         content.addWidget(self._stack, stretch=1)
         content.addWidget(self.bottom)
 
@@ -319,6 +324,7 @@ class MainWindow(QMainWindow):
         engine.tradeExecuted.connect(self._on_trade)
         engine.logAdded.connect(self.dash.add_log)
         engine.logAdded.connect(self.logs.add_log)
+        engine.logAdded.connect(self._on_log_alert)
 
     # ------------------------------------------------------------------ slots
 
@@ -342,6 +348,10 @@ class MainWindow(QMainWindow):
     def _on_mode(self, mode: str) -> None:
         self.dash.set_mode(mode)
         self.bottom.market_label.setText(f"BTC (Binance) → Polymarket [{mode}]")
+
+    def _on_log_alert(self, level: str, message: str) -> None:
+        if level == "ERROR":
+            self.alert.show_error(message)
 
     def _on_trade(self) -> None:
         self.trades.reload()

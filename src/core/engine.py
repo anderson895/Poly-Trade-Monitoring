@@ -32,6 +32,7 @@ from src.execution.polymarket import (
     PolymarketError,
     find_daily_btc_market,
 )
+from src.execution.resume import decide_restore
 from src.feed.binance import BinanceFeed
 from src.feed.coinbase import CoinbaseFeed
 from src.storage.db import Database
@@ -115,6 +116,7 @@ class BotEngine(QObject):
         else:
             self.executor = PaperExecutor(self._db)
             self.modeChanged.emit("PAPER")
+            self._restore_position()
 
         self._feed.start()
         self._coinbase.start()
@@ -159,6 +161,7 @@ class BotEngine(QObject):
             asyncio.create_task(self._refresh_live_balance())
             self.log("INFO", f"LIVE mode ready — market: {market.question}")
             self.modeChanged.emit("LIVE")
+            self._restore_position()
         except Exception as e:
             filelog.exception("Live setup failed (full traceback):")
             self.log("ERROR", f"Live setup failed: {e} — falling back to PAPER mode")
@@ -196,6 +199,20 @@ class BotEngine(QObject):
         except Exception as e:
             filelog.exception("Balance fetch failed:")
             self.log("WARN", f"Balance fetch failed: {e}")
+
+    def _restore_position(self) -> None:
+        """I-restore ang open position mula sa DB pagkatapos ng app restart."""
+        position, level, message = decide_restore(
+            self._db.load_open_position(),
+            self.executor.MODE,
+            dt.datetime.now(dt.timezone.utc).date(),
+        )
+        if position is not None:
+            self.executor.position = position
+        elif message:
+            self._db.clear_open_position()  # stale/mismatch — huwag nang ulitin
+        if message:
+            self.log(level, message)
 
     def log(self, level: str, message: str) -> None:
         self._db.add_log(level, message)
@@ -303,7 +320,13 @@ class BotEngine(QObject):
 
                 risk = float(self._db.get_setting("risk_usdc", DEFAULT_RISK_USDC))
                 tag = self.executor.MODE
-                pos = self.executor.buy(market, sig.side, share_price, risk)
+                try:
+                    pos = self.executor.buy(market, sig.side, share_price, risk)
+                except Exception as e:
+                    filelog.exception("BUY order failed:")
+                    self.log("ERROR", f"BUY order failed: {e}")
+                    self.strategyStatus.emit(f"ERROR — BUY failed: {e}")
+                    return
                 self._trades_today += 1
                 self.log("TRADE", f"[{tag}] BUY {pos.shares:,.1f} {sig.side} @ "
                                   f"{share_price:.2f} (${risk:.2f}) — {sig.reason}")
@@ -329,7 +352,13 @@ class BotEngine(QObject):
             sig = evaluate_exit(now, pos, share_price, self.config)
             if sig.action is Action.EXIT:
                 tag = self.executor.MODE
-                pnl = self.executor.sell(market, share_price)
+                try:
+                    pnl = self.executor.sell(market, share_price)
+                except Exception as e:
+                    filelog.exception("SELL order failed:")
+                    self.log("ERROR", f"SELL order failed: {e}")
+                    self.strategyStatus.emit(f"ERROR — SELL failed: {e}")
+                    return
                 self.log("TRADE", f"[{tag}] SELL {pos.side} @ {share_price:.2f} — "
                                   f"PnL {pnl:+,.2f} USDC — {sig.reason}")
                 self.tradeExecuted.emit()

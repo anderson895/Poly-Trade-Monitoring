@@ -72,6 +72,10 @@ class PaperExecutor:
             size=usdc,
             status="FILLED",
         )
+        # I-persist para ma-restore kapag na-restart ang app mid-position
+        self._db.save_open_position(
+            self.MODE, market, side, share_price, shares, self.position.entry_ts
+        )
         return self.position
 
     def sell(self, market: str, share_price: float) -> float:
@@ -91,4 +95,5 @@ class PaperExecutor:
             pnl=pnl,
         )
         self.position = None
+        self._db.clear_open_position()
         return pnl

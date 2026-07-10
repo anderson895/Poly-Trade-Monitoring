@@ -9,9 +9,10 @@ from __future__ import annotations
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-LOG_DIR = Path(__file__).resolve().parents[2] / "data"
+from src.core.paths import DATA_DIR
+
+LOG_DIR = DATA_DIR
 LOG_PATH = LOG_DIR / "app.log"
 
 logger = logging.getLogger("polytrade")

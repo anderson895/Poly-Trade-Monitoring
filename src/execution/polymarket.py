@@ -210,6 +210,10 @@ class LiveExecutor:
             market=market, side=side, action="BUY",
             price=share_price, size=usdc, status="OPEN",
         )
+        # I-persist para ma-restore kapag na-restart ang app mid-position
+        self._db.save_open_position(
+            self.MODE, market, side, share_price, shares, self.position.entry_ts
+        )
         self._db.add_log("TRADE", f"[LIVE] Order posted: {order_id}")
         return self.position
 
@@ -227,4 +231,5 @@ class LiveExecutor:
         )
         self._db.add_log("TRADE", f"[LIVE] Sell order posted: {order_id}")
         self.position = None
+        self._db.clear_open_position()
         return pnl
