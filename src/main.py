@@ -6,6 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
+
+# Para gumana kahit direktang patakbuhin (python main.py) —
+# idagdag ang project root sa path bago ang src.* imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import truststore
 
