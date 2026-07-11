@@ -233,10 +233,10 @@ class SettingsPage(QWidget):
 
         # --- Buttons ------------------------------------------------------
         save_btn = QPushButton("  Save Settings")
-        save_btn.setIcon(qta.icon("fa6s.floppy-disk", color=theme.TEXT))
+        save_btn.setIcon(qta.icon("fa6s.floppy-disk", color="white"))
+        save_btn.setObjectName("accentBtn")  # primary action = active color
         reset_btn = QPushButton("  Reset")
-        reset_btn.setIcon(qta.icon("fa6s.rotate", color="white"))
-        reset_btn.setObjectName("accentBtn")
+        reset_btn.setIcon(qta.icon("fa6s.rotate", color=theme.TEXT))
         save_btn.clicked.connect(self._save)
         reset_btn.clicked.connect(self._reset)
 

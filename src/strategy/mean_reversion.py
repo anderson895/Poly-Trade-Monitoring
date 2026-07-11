@@ -197,12 +197,13 @@ def evaluate_entry(
     if abs_stretch < cfg.min_stretch_pct:
         return Signal(
             Action.NONE,
-            reason=f"stretch {stretch_pct:+.2f}% < {cfg.min_stretch_pct}% minimum",
+            reason=f"stretch {stretch_pct:+.2f}% < "
+                   f"{cfg.min_stretch_pct:.3g}% minimum",
         )
     if abs_stretch > cfg.max_stretch_pct:
         return Signal(
             Action.NONE,
-            reason=f"stretch {stretch_pct:+.2f}% > {cfg.max_stretch_pct}% "
+            reason=f"stretch {stretch_pct:+.2f}% > {cfg.max_stretch_pct:.3g}% "
                    "— possible momentum day (death trap), skipping",
         )
 
