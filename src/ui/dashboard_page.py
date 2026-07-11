@@ -241,9 +241,20 @@ class DashboardPage(QWidget):
         if self._live_mode:
             return  # sa live mode, ang engine ang nagpapadala ng totoong balance
         start = float(self._db.get_setting("paper_start_usdc", DEFAULT_PAPER_START))
-        balance = start + self._db.total_pnl()
+        # Cash-style: kapag may OPEN position, bawas muna ang halagang
+        # nakalagay doon (BUY = bababa agad ang balance; SELL = babalik
+        # ang proceeds kasama ang PnL)
+        open_cost = 0.0
+        pos = self._db.load_open_position()
+        if pos:
+            open_cost = float(pos["entry_price"]) * float(pos["shares"])
+        balance = start + self._db.total_pnl() - open_cost
         color = theme.GREEN if balance >= start else theme.RED
         self.balance_card.set_value(f"{balance:,.2f} USDC", color)
+        self.balance_card.set_sub(
+            f"Simulated — {open_cost:,.0f} USDC in open position"
+            if open_cost else "Simulated — no real money"
+        )
 
     def set_mode(self, mode: str) -> None:
         self._live_mode = mode == "LIVE"
