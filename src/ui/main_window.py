@@ -333,6 +333,10 @@ class MainWindow(QMainWindow):
         container.setLayout(root)
         self.setCentralWidget(container)
 
+        # Pointer (hand) cursor sa LAHAT ng clickable elements — walang
+        # QSS "cursor" property ang Qt kaya programmatic ito
+        self._apply_pointer_cursors(container)
+
         # ---- Uptime timer ----------------------------------------------------
         self._uptime_secs = 0
         self._uptime_timer = QTimer(self)
@@ -359,6 +363,15 @@ class MainWindow(QMainWindow):
         engine.logAdded.connect(self.dash.add_log)
         engine.logAdded.connect(self.logs.add_log)
         engine.logAdded.connect(self._on_log_alert)
+
+    def _apply_pointer_cursors(self, container: QWidget) -> None:
+        """Hand cursor sa bawat button, dropdown, checkbox, at nav item."""
+        from PySide6.QtWidgets import QCheckBox, QComboBox
+
+        for cls in (QPushButton, QToolButton, QComboBox, QCheckBox):
+            for widget in container.findChildren(cls):
+                widget.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._nav.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
 
     # ---------------------------------------------------------------- sidebar
 
