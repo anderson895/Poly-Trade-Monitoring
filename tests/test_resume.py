@@ -13,19 +13,22 @@ from src.execution.paper import PaperExecutor
 from src.execution.resume import decide_restore
 from src.storage.db import Database
 
-TODAY = dt.date(2026, 7, 11)
+# Kasalukuyang market period: nagsimula 08:00 UTC; ang entries sa 08:30
+# ay kabilang dito, ang mas luma ay stale
+PERIOD_START = dt.datetime(2026, 7, 11, 8, 0, tzinfo=dt.timezone.utc)
 
 
-def saved(mode: str = "PAPER", day: dt.date = TODAY, **overrides) -> dict:
+def saved(mode: str = "PAPER",
+          entry: dt.datetime | None = None, **overrides) -> dict:
+    if entry is None:
+        entry = dt.datetime(2026, 7, 11, 8, 30, tzinfo=dt.timezone.utc)
     base = {
         "mode": mode,
         "market": "BTC Up/Down 2026-07-11 [PAPER]",
         "side": "DOWN",
         "entry_price": 0.20,
         "shares": 1000.0,
-        "entry_ts": dt.datetime(
-            day.year, day.month, day.day, 8, 30, tzinfo=dt.timezone.utc
-        ).isoformat(timespec="seconds"),
+        "entry_ts": entry.isoformat(timespec="seconds"),
     }
     base.update(overrides)
     return base
@@ -33,40 +36,57 @@ def saved(mode: str = "PAPER", day: dt.date = TODAY, **overrides) -> dict:
 
 class TestDecideRestore(unittest.TestCase):
     def test_no_saved_position(self) -> None:
-        pos, level, msg = decide_restore(None, "PAPER", TODAY)
+        pos, level, msg = decide_restore(None, "PAPER", PERIOD_START)
         self.assertIsNone(pos)
         self.assertEqual(msg, "")
 
-    def test_restore_same_day_same_mode(self) -> None:
-        pos, level, msg = decide_restore(saved(), "PAPER", TODAY)
+    def test_restore_same_period_same_mode(self) -> None:
+        pos, level, msg = decide_restore(saved(), "PAPER", PERIOD_START)
         self.assertIsNotNone(pos)
         self.assertEqual(level, "INFO")
         self.assertEqual(pos.side, "DOWN")
         self.assertEqual(pos.entry_price, 0.20)
         self.assertEqual(pos.shares, 1000.0)
 
-    def test_stale_previous_day_discarded(self) -> None:
+    def test_stale_previous_period_discarded(self) -> None:
         pos, level, msg = decide_restore(
-            saved(day=TODAY - dt.timedelta(days=1)), "PAPER", TODAY
+            saved(entry=PERIOD_START - dt.timedelta(hours=1)),
+            "PAPER", PERIOD_START,
         )
         self.assertIsNone(pos)
         self.assertEqual(level, "WARN")
         self.assertIn("Stale", msg)
 
+    def test_same_period_across_utc_midnight_is_restored(self) -> None:
+        # Daily market = tanghali-ET -> tanghali-ET: ang position na binili
+        # 23:00 UTC ay dapat ma-restore pagkalampas ng UTC midnight basta
+        # hindi pa tapos ang period
+        ps = dt.datetime(2026, 7, 11, 16, 0, tzinfo=dt.timezone.utc)  # noon EDT
+        entry = dt.datetime(2026, 7, 11, 23, 0, tzinfo=dt.timezone.utc)
+        pos, level, msg = decide_restore(saved(entry=entry), "PAPER", ps)
+        self.assertIsNotNone(pos)
+        self.assertEqual(level, "INFO")
+
     def test_live_position_in_paper_mode_is_loud_error(self) -> None:
         # May totoong pera pa sa Polymarket — dapat ERROR, hindi tahimik
-        pos, level, msg = decide_restore(saved(mode="LIVE"), "PAPER", TODAY)
+        pos, level, msg = decide_restore(
+            saved(mode="LIVE"), "PAPER", PERIOD_START
+        )
         self.assertIsNone(pos)
         self.assertEqual(level, "ERROR")
         self.assertIn("LIVE position", msg)
 
     def test_paper_position_in_live_mode_discarded(self) -> None:
-        pos, level, msg = decide_restore(saved(mode="PAPER"), "LIVE", TODAY)
+        pos, level, msg = decide_restore(
+            saved(mode="PAPER"), "LIVE", PERIOD_START
+        )
         self.assertIsNone(pos)
         self.assertEqual(level, "WARN")
 
     def test_corrupt_record_discarded(self) -> None:
-        pos, level, msg = decide_restore({"mode": "PAPER"}, "PAPER", TODAY)
+        pos, level, msg = decide_restore(
+            {"mode": "PAPER"}, "PAPER", PERIOD_START
+        )
         self.assertIsNone(pos)
         self.assertEqual(level, "WARN")
         self.assertIn("Corrupt", msg)
@@ -104,7 +124,7 @@ class TestExecutorPersistence(unittest.TestCase):
         self.assertIsNone(ex2.position)
         pos, level, msg = decide_restore(
             self.db.load_open_position(), ex2.MODE,
-            dt.datetime.now(dt.timezone.utc).date(),
+            dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1),
         )
         self.assertIsNotNone(pos)
         ex2.position = pos

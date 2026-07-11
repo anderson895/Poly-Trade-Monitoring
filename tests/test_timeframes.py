@@ -12,6 +12,7 @@ from src.execution.polymarket import build_market_slugs
 from src.strategy.mean_reversion import (
     StrategyConfig,
     hours_into_period,
+    period_start_utc,
     scale_config_for_timeframe,
     stretch_scale,
 )
@@ -76,12 +77,74 @@ class TestHoursIntoPeriod(unittest.TestCase):
             hours_into_period(utc(2026, 7, 11, 8, 40), 0.25), 10 / 60
         )
 
+    def test_daily_with_noon_et_anchor(self) -> None:
+        # Anchor = 16:00 UTC (tanghali EDT): 20:00 UTC -> 4h sa period
+        self.assertAlmostEqual(
+            hours_into_period(utc(2026, 7, 11, 20, 0), 24.0, 57600.0), 4.0
+        )
+        # 02:00 UTC kinabukasan -> 10h sa PAREHONG period
+        self.assertAlmostEqual(
+            hours_into_period(utc(2026, 7, 12, 2, 0), 24.0, 57600.0), 10.0
+        )
+
+
+class TestPeriodStartUtc(unittest.TestCase):
+    def test_daily_after_noon_edt(self) -> None:
+        # 21:00 UTC Hulyo 11 = 17:00 EDT -> anchor = tanghali EDT ngayong
+        # araw = 16:00 UTC
+        self.assertEqual(
+            period_start_utc(utc(2026, 7, 11, 21), "daily"),
+            utc(2026, 7, 11, 16),
+        )
+
+    def test_daily_before_noon_edt(self) -> None:
+        # 10:00 UTC Hulyo 11 = 06:00 EDT -> anchor = tanghali EDT KAHAPON
+        self.assertEqual(
+            period_start_utc(utc(2026, 7, 11, 10), "daily"),
+            utc(2026, 7, 10, 16),
+        )
+
+    def test_daily_est_winter(self) -> None:
+        # Enero = EST (UTC-5): 16:30 UTC = 11:30 ET (bago mag-tanghali)
+        # -> anchor = tanghali EST kahapon = 17:00 UTC Enero 12
+        self.assertEqual(
+            period_start_utc(utc(2026, 1, 13, 16, 30), "daily"),
+            utc(2026, 1, 12, 17),
+        )
+
+    def test_15m_utc_aligned(self) -> None:
+        self.assertEqual(
+            period_start_utc(utc(2026, 7, 11, 8, 40), "15m"),
+            utc(2026, 7, 11, 8, 30),
+        )
+
 
 class TestSlugBuilders(unittest.TestCase):
-    def test_daily_slugs(self) -> None:
+    def test_daily_slugs_before_noon_et(self) -> None:
+        # 05:00 UTC Hulyo 11 = 01:00 EDT -> settlement mamayang tanghali
+        # -> market ng Hulyo 11
         slugs = build_market_slugs("daily", utc(2026, 7, 11, 5))
         self.assertEqual(slugs[0], "bitcoin-up-or-down-on-july-11-2026")
         self.assertEqual(slugs[1], "bitcoin-up-or-down-on-july-11")
+
+    def test_daily_slugs_after_noon_et(self) -> None:
+        # 21:00 UTC Hulyo 11 = 17:00 EDT -> settled na ang Hulyo 11 market;
+        # ang aktibo ay ang HULYO 12 (susunod na tanghali-ET settlement).
+        # Ito ang bug na nag-"No market found" noong 2026-07-12.
+        slugs = build_market_slugs("daily", utc(2026, 7, 11, 21))
+        self.assertEqual(slugs[0], "bitcoin-up-or-down-on-july-12-2026")
+
+    def test_daily_slugs_est_winter(self) -> None:
+        # Enero = EST (UTC-5): 16:30 UTC = 11:30 ET -> Enero 13 pa rin
+        self.assertEqual(
+            build_market_slugs("daily", utc(2026, 1, 13, 16, 30))[0],
+            "bitcoin-up-or-down-on-january-13-2026",
+        )
+        # 17:30 UTC = 12:30 ET -> lampas tanghali -> Enero 14 na
+        self.assertEqual(
+            build_market_slugs("daily", utc(2026, 1, 13, 17, 30))[0],
+            "bitcoin-up-or-down-on-january-14-2026",
+        )
 
     def test_15m_slug_alignment(self) -> None:
         # 08:40 UTC -> period start 08:30 UTC

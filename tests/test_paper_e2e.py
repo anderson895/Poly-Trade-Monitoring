@@ -1,7 +1,10 @@
 """End-to-end test ng PAPER buy/sell logic — buong engine pipeline.
 
-Sine-simulate ang isang buong mean-reversion na araw:
-  1. 08:00 UTC: BTC pumped +2.0% mula sa daily open
+Sine-simulate ang isang buong mean-reversion na daily period. Ang daily
+market ay naka-anchor sa TANGHALI ET (16:00 UTC sa EDT / 17:00 sa EST),
+kaya ang entry window (4-12h pagkatapos ng anchor) ay ~20:00-04:00 UTC.
+Ang mga tick hours dito ay pinili para valid sa PAREHONG EDT at EST:
+  1. 22:00 UTC (5-6h sa period): BTC pumped +2.0% mula sa strike
      -> bibili ang bot ng DOWN shares sa ~20c ($200 risk)
   2. Mamaya: bumalik ang BTC sa +0.6% (reversion)
      -> ang DOWN share ay ~41c na = +105% >= +100% profit target
@@ -60,9 +63,9 @@ class TestPaperBuySellE2E(unittest.TestCase):
         self.db.close()
         self._tmp.cleanup()
 
-    def _tick(self, hour: int, stretch_pct: float) -> None:
+    def _tick(self, hour: int, stretch_pct: float, minute: int = 0) -> None:
         """Isang price tick sa engine sa itinakdang oras at stretch."""
-        engine_mod.dt = _fake_dt(hour)
+        engine_mod.dt = _fake_dt(hour, minute)
         price = FIXED_OPEN * (1 + stretch_pct / 100)
         self.engine._feed.last_price = price
         self.engine._evaluate_strategy(stretch_pct)
@@ -70,16 +73,17 @@ class TestPaperBuySellE2E(unittest.TestCase):
     def test_full_buy_then_sell_cycle(self) -> None:
         eng = self.engine
 
-        # --- 02:00 UTC, +2.0%: TAMA ang stretch pero SARADO pa ang window
-        self._tick(2, 2.0)
+        # --- 18:00 UTC (1-2h sa period), +2.0%: TAMA ang stretch pero
+        #     SARADO pa ang window (bubukas 4h pagkatapos ng tanghali ET)
+        self._tick(18, 2.0)
         self.assertIsNone(eng.executor.position, "bumili nang maaga!")
 
-        # --- 08:00 UTC, +0.5%: bukas ang window pero KULANG ang stretch
-        self._tick(8, 0.5)
+        # --- 22:00 UTC, +0.5%: bukas ang window pero KULANG ang stretch
+        self._tick(22, 0.5)
         self.assertIsNone(eng.executor.position, "bumili nang walang stretch!")
 
-        # --- 08:00 UTC, +2.0%: LAHAT pasok -> BUY DOWN sa ~20c
-        self._tick(8, 2.0)
+        # --- 22:00 UTC, +2.0%: LAHAT pasok -> BUY DOWN sa ~20c
+        self._tick(22, 2.0)
         pos = eng.executor.position
         self.assertIsNotNone(pos, "hindi bumili kahit pasok ang kondisyon")
         self.assertEqual(pos.side, "DOWN")
@@ -92,12 +96,12 @@ class TestPaperBuySellE2E(unittest.TestCase):
         # Naka-persist ang position para sa restart resume
         self.assertIsNotNone(self.db.load_open_position())
 
-        # --- 10:00 UTC, +1.0% pa rin: HINDI pa profit target (holding)
-        self._tick(10, 1.0)
+        # --- 23:00 UTC, +1.0% pa rin: HINDI pa profit target (holding)
+        self._tick(23, 1.0)
         self.assertIsNotNone(eng.executor.position, "nagbenta nang maaga!")
 
-        # --- 12:00 UTC, +0.6%: reversion! share ~41c = +105% -> SELL
-        self._tick(12, 0.6)
+        # --- 23:30 UTC, +0.6%: reversion! share ~41c = +105% -> SELL
+        self._tick(23, 0.6, minute=30)
         self.assertIsNone(eng.executor.position, "hindi nagbenta sa target")
 
         trades = self.db.recent_trades()
@@ -111,26 +115,26 @@ class TestPaperBuySellE2E(unittest.TestCase):
 
     def test_stop_loss_cycle(self) -> None:
         eng = self.engine
-        # BUY DOWN sa ~20c (08:00, +2.0%)
-        self._tick(8, 2.0)
+        # BUY DOWN sa ~20c (22:00 UTC, +2.0%)
+        self._tick(22, 2.0)
         self.assertIsNotNone(eng.executor.position)
 
         # Lumalim pa ang pump: +2.8% -> DOWN share ~ 0.50-0.15*2.8 = 0.08
         # = -60% <= -50% stop loss -> SELL (cut loss)
-        self._tick(10, 2.8)
+        self._tick(23, 2.8)
         self.assertIsNone(eng.executor.position, "hindi nag-stop loss")
         trades = self.db.recent_trades()
         self.assertEqual(trades[0]["action"], "SELL")
         self.assertLess(trades[0]["pnl"], 0)
 
-    def test_max_one_trade_per_day(self) -> None:
+    def test_max_one_trade_per_period(self) -> None:
         eng = self.engine
-        self._tick(8, 2.0)   # buy
-        self._tick(12, 0.6)  # sell sa profit
+        self._tick(22, 2.0)  # buy
+        self._tick(23, 0.6)  # sell sa profit
         self.assertIsNone(eng.executor.position)
-        # Pumasok ulit ang kondisyon SA PAREHONG ARAW -> bawal na
-        self._tick(11, 2.0)
-        self.assertIsNone(eng.executor.position, "lumampas sa 1 trade/day!")
+        # Pumasok ulit ang kondisyon SA PAREHONG PERIOD -> bawal na
+        self._tick(23, 2.0, minute=30)
+        self.assertIsNone(eng.executor.position, "lumampas sa 1 trade/period!")
 
 
 if __name__ == "__main__":

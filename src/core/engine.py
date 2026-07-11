@@ -11,8 +11,10 @@ safe mag-emit ng signals nang direkta.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime as dt
 import logging
+import re
 from enum import Enum
 
 from PySide6.QtCore import QObject, Signal
@@ -46,6 +48,7 @@ from src.strategy.mean_reversion import (
     StrategyConfig,
     evaluate_entry,
     evaluate_exit,
+    period_start_utc,
     scale_config_for_timeframe,
     stretch_scale,
     target_side,
@@ -63,7 +66,8 @@ class BotState(Enum):
 
 class BotEngine(QObject):
     priceUpdated = Signal(float)          # latest BTC price
-    dailyOpenUpdated = Signal(float)      # 00:00 UTC open ("Price to Beat")
+    dailyOpenUpdated = Signal(float)      # period open / "Price to Beat"
+                                          # (daily = 12PM ET strike)
     stretchUpdated = Signal(float)        # % distance from daily open
     connectionChanged = Signal(str, bool)  # (service, is_up)
     stateChanged = Signal(str)            # BotState value
@@ -87,6 +91,9 @@ class BotEngine(QObject):
         # One-time WARN flags para hindi mag-spam ang log kada tick
         self._volume_veto_logged = False
         self._premium_veto_logged = False
+        # Huling na-log na WATCHING reason (digits stripped) — para makita
+        # sa Recent Logs KUNG BAKIT hindi pumapasok, nang walang spam
+        self._watch_log_key = ""
         # Live mode state
         self._live_client: PolymarketClient | None = None
         self._live_books: dict[str, tuple[float | None, float | None]] = {}
@@ -133,6 +140,7 @@ class BotEngine(QObject):
             return
         self.config = self._load_config()  # kunin ang latest settings
         self.state = BotState.RUNNING
+        self._watch_log_key = ""  # fresh session = i-log ang unang reason
 
         mode = str(self._db.get_setting("trading_mode", "paper")).lower()
         if mode == "live":
@@ -249,8 +257,8 @@ class BotEngine(QObject):
             await asyncio.sleep(5)
 
     def _aligned_period_start(self) -> float:
-        now = dt.datetime.now(dt.timezone.utc).timestamp()
-        return now - now % self._period_secs
+        now = dt.datetime.now(dt.timezone.utc)
+        return period_start_utc(now, self._timeframe).timestamp()
 
     async def _live_balance_loop(self) -> None:
         """I-refresh ang totoong USDC balance nang paulit-ulit.
@@ -303,20 +311,14 @@ class BotEngine(QObject):
 
     def _restore_position(self) -> None:
         """I-restore ang open position mula sa DB pagkatapos ng app restart."""
-        position, level, message = decide_restore(
-            self._db.load_open_position(),
-            self.executor.MODE,
-            dt.datetime.now(dt.timezone.utc).date(),
+        # Period-based ang staleness sa LAHAT ng timeframes (ang daily ay
+        # tanghali-ET anchored via period_start_utc)
+        period_start = dt.datetime.fromtimestamp(
+            self._aligned_period_start(), dt.timezone.utc
         )
-        # Sa mas maiikling timeframes: stale na rin kapag IBANG period na
-        # ang kasalukuyan (settled na ang market ng lumang position)
-        if (position is not None and self._timeframe != "daily"
-                and position.entry_ts.timestamp() < self._aligned_period_start()):
-            level, message = "WARN", (
-                f"Stale open position discarded — the {self._timeframe} "
-                "market period has already ended"
-            )
-            position = None
+        position, level, message = decide_restore(
+            self._db.load_open_position(), self.executor.MODE, period_start
+        )
         if position is not None:
             self.executor.position = position
         elif message:
@@ -355,9 +357,15 @@ class BotEngine(QObject):
         if self._timeframe not in TF_TO_INTERVAL:
             self._timeframe = "daily"
         self._price_scale = stretch_scale(self._timeframe)
-        self._period_secs = cfg.period_hours * 3600.0
         cfg = scale_config_for_timeframe(cfg, self._timeframe)
         self._period_secs = cfg.period_hours * 3600.0
+        if self._timeframe == "daily":
+            # Daily market = tanghali-ET anchor. Kinukuwenta sa START
+            # (DST-dependent: 57600 EDT / 61200 EST); sapat na dahil
+            # nire-reload ang config sa bawat START.
+            now = dt.datetime.now(dt.timezone.utc)
+            offset = period_start_utc(now, "daily").timestamp() % 86400.0
+            cfg = dataclasses.replace(cfg, anchor_offset_secs=offset)
         return cfg
 
     # ------------------------------------------------------------- handlers
@@ -375,7 +383,12 @@ class BotEngine(QObject):
 
     def _handle_daily_open(self, open_price: float) -> None:
         self.dailyOpenUpdated.emit(open_price)
-        self.log("INFO", f"Daily open (00:00 UTC) = ${open_price:,.2f}")
+        if self._timeframe == "daily":
+            # Polymarket daily strike = Binance 1m close, nakaraang 12PM ET
+            self.log("INFO", f"Price to beat (12:00 PM ET strike) = "
+                             f"${open_price:,.2f}")
+        else:
+            self.log("INFO", f"Period open = ${open_price:,.2f}")
 
     # ------------------------------------------------------------- strategy
 
@@ -465,6 +478,12 @@ class BotEngine(QObject):
                 )
             else:
                 self.strategyStatus.emit(f"WATCHING — {sig.reason}")
+                # I-log ang reason kapag NAGBAGO ang klase nito (numbers
+                # stripped sa dedup key para hindi mag-log kada tick)
+                key = re.sub(r"[0-9.+-]+", "#", sig.reason)
+                if key != self._watch_log_key:
+                    self._watch_log_key = key
+                    self.log("INFO", f"Watching: {sig.reason}")
         else:
             pos = self.executor.position
             if live:

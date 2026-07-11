@@ -1,7 +1,8 @@
 """Mean Reversion / "Rubber Band" strategy — pure logic, walang I/O.
 
 Mula sa reference (details.txt):
-- Maghintay ng 4-12 hours pagkatapos ng daily open (00:00 UTC)
+- Maghintay ng 4-12 hours pagkatapos ng period open (sa daily market:
+  TANGHALI ET ang totoong anchor ng Polymarket, hindi 00:00 UTC)
 - Entry kapag ang BTC ay naka-stretch ng 1.5%-2.5% mula sa daily open
   (lampas 2.5% = posibleng momentum expansion day — DEATH TRAP, iwasan)
 - Bilhin ang out-of-the-money side (DOWN kung pumped, UP kung dumped)
@@ -17,6 +18,7 @@ import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 # Polymarket BTC Up/Down market timeframes -> period sa oras
 TIMEFRAMES: dict[str, float] = {
@@ -25,6 +27,11 @@ TIMEFRAMES: dict[str, float] = {
     "1h": 1.0,
     "15m": 0.25,
 }
+
+# Ang Polymarket DAILY market ay tanghali-ET-hanggang-tanghali-ET
+# (strike = Binance 1m close sa nakaraang 12:00 PM ET), HINDI UTC day.
+# Verified sa Gamma API market description, 2026-07-12.
+ET = ZoneInfo("America/New_York")
 
 
 class Action(Enum):
@@ -46,6 +53,10 @@ class StrategyConfig:
     stop_loss_pct: float = 50.0       # -50% ng entry price -> SELL (cut loss)
     eod_exit_hour: float = 23.5       # force exit bago mag-settlement
     max_trades_per_day: int = 1
+    # Simula ng period bilang offset (secs) mula sa UTC epoch alignment.
+    # 0 = UTC-aligned (15m/1h/4h). Sa daily: itinatakda ng engine sa
+    # tanghali-ET anchor (57600 sa EDT, 61200 sa EST).
+    anchor_offset_secs: float = 0.0
     # Volume escalation filter (death trap guard)
     volume_spike_mult: float = 2.0    # recent avg >= 2x baseline = momentum day
     volume_recent_hours: int = 3
@@ -69,19 +80,45 @@ class Signal:
     reason: str = ""
 
 
-def hours_into_period(now_utc: dt.datetime, period_hours: float = 24.0) -> float:
+def hours_into_period(
+    now_utc: dt.datetime,
+    period_hours: float = 24.0,
+    anchor_offset_secs: float = 0.0,
+) -> float:
     """Ilang oras na ang lumipas sa loob ng kasalukuyang market period.
 
-    Ang lahat ng Polymarket BTC periods (15m/1h/4h/daily) ay naka-align sa
-    UTC epoch boundaries, kaya simpleng modulo sa period length.
+    Ang 15m/1h/4h periods ay naka-align sa UTC epoch boundaries (offset 0);
+    ang daily ay naka-anchor sa tanghali ET — ipasa ang offset mula sa
+    period_start_utc/engine.
     """
     period_secs = period_hours * 3600.0
-    return (now_utc.timestamp() % period_secs) / 3600.0
+    return ((now_utc.timestamp() - anchor_offset_secs) % period_secs) / 3600.0
 
 
 def hours_since_utc_open(now_utc: dt.datetime) -> float:
     """Back-compat alias para sa daily (24h) period."""
     return hours_into_period(now_utc, 24.0)
+
+
+def period_start_utc(now_utc: dt.datetime, timeframe: str) -> dt.datetime:
+    """Simula (UTC) ng KASALUKUYANG market period ng timeframe.
+
+    - 15m/1h/4h: naka-align sa UTC epoch boundaries (simpleng modulo)
+    - daily: ang nakaraang TANGHALI ET (12:00 PM America/New_York) —
+      doon nagsisimula ang Polymarket daily market at doon kinukuha
+      ang strike ("price to beat"); DST-aware via zoneinfo
+    """
+    if timeframe == "daily":
+        et = now_utc.astimezone(ET)
+        noon = et.replace(hour=12, minute=0, second=0, microsecond=0)
+        if et < noon:
+            noon = dt.datetime.combine(
+                et.date() - dt.timedelta(days=1), dt.time(12), tzinfo=ET
+            )
+        return noon.astimezone(dt.timezone.utc)
+    secs = TIMEFRAMES[timeframe] * 3600.0
+    ts = now_utc.timestamp()
+    return dt.datetime.fromtimestamp(ts - ts % secs, dt.timezone.utc)
 
 
 def stretch_scale(timeframe: str) -> float:
@@ -139,7 +176,7 @@ def evaluate_entry(
     if trades_today >= cfg.max_trades_per_day:
         return Signal(Action.NONE, reason="max trades for this period reached")
 
-    hrs = hours_into_period(now_utc, cfg.period_hours)
+    hrs = hours_into_period(now_utc, cfg.period_hours, cfg.anchor_offset_secs)
     if hrs < cfg.entry_start_hour:
         if cfg.period_hours <= 4:  # maikling period — minutes ang malinaw
             window = (f"{cfg.entry_start_hour * 60:.1f}-"
@@ -212,7 +249,8 @@ def evaluate_exit(
                    f"(entry {position.entry_price:.2f} -> {share_price:.2f})",
         )
 
-    if hours_into_period(now_utc, cfg.period_hours) >= cfg.eod_exit_hour:
+    if (hours_into_period(now_utc, cfg.period_hours, cfg.anchor_offset_secs)
+            >= cfg.eod_exit_hour):
         return Signal(
             Action.EXIT,
             reason=f"end-of-period force exit ({change_pct:+.0f}%) — "

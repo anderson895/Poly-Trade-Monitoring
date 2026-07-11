@@ -4,10 +4,12 @@ Ang open position ay naka-persist sa SQLite (db.save_open_position) tuwing
 BUY at binubura tuwing SELL. Sa pag-START ng bot, dinedesisyunan dito kung
 ire-restore ito sa executor:
 
-- Ibang UTC day na  -> STALE: settled na ang daily market, huwag i-restore
+- Mas luma sa kasalukuyang PERIOD START -> STALE: settled na ang market
+  ng position, huwag i-restore (gumagana sa lahat ng timeframes —
+  ang daily ay tanghali-ET anchored, ang 15m/1h/4h ay UTC-aligned)
 - Ibang mode        -> huwag i-restore (pero kung LIVE ang naiwan, i-ERROR
                        nang malakas — may totoong pera pang nakalagay doon)
-- Same day + mode   -> i-restore
+- Same period + mode -> i-restore
 """
 from __future__ import annotations
 
@@ -18,9 +20,12 @@ from src.strategy.mean_reversion import Position
 
 
 def decide_restore(
-    saved: Optional[dict], mode: str, today_utc: dt.date
+    saved: Optional[dict], mode: str, period_start: dt.datetime
 ) -> tuple[Optional[Position], str, str]:
     """Ibinabalik ang (position | None, log_level, log_message).
+
+    Ang `period_start` ay ang simula (UTC) ng KASALUKUYANG market period —
+    stale ang anumang position na pumasok bago iyon.
 
     Kapag None ang position, dapat i-clear ng caller ang saved record
     (maliban kung walang saved talaga — blanko rin ang message doon).
@@ -41,10 +46,10 @@ def decide_restore(
     except (KeyError, ValueError, TypeError) as e:
         return None, "WARN", f"Corrupt saved position discarded ({e})"
 
-    if entry_ts.date() != today_utc:
+    if entry_ts < period_start:
         return None, "WARN", (
-            f"Stale open position from {entry_ts.date().isoformat()} discarded "
-            f"— the daily market has already settled ({market})"
+            f"Stale open position from {entry_ts.isoformat(timespec='minutes')} "
+            f"discarded — its market period has already settled ({market})"
         )
 
     if saved_mode != mode:

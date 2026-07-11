@@ -1,9 +1,11 @@
 """Binance read-only BTC price feed.
 
 Streams real-time BTCUSDT price via public WebSocket (walang API key na
-kailangan para sa public market data) at kinukuha ang Daily Open Price
-(00:00 UTC) via REST klines. Awtomatikong nagre-reconnect at nagre-refresh
-ng daily open kapag nag-rollover ang UTC day.
+kailangan para sa public market data) at kinukuha ang period open /
+"price to beat" via REST klines. Sa DAILY market, ang anchor ay ang 1m
+CLOSE sa nakaraang TANGHALI ET (ganito ang Polymarket daily settlement),
+hindi ang 00:00 UTC open. Awtomatikong nagre-reconnect at nagre-refresh
+kapag nag-rollover ang period.
 """
 from __future__ import annotations
 
@@ -15,6 +17,8 @@ from typing import Awaitable, Callable, Optional
 
 import httpx
 import websockets
+
+from src.strategy.mean_reversion import period_start_utc
 
 filelog = logging.getLogger("polytrade.binance")
 
@@ -35,7 +39,7 @@ HISTORY_MINUTES = 120  # 2 oras ng 1m candles ang ipe-prefill sa chart
 
 
 class BinanceFeed:
-    """Real-time BTCUSDT feed with daily-open (00:00 UTC) tracking."""
+    """Real-time BTCUSDT feed with period-open ("price to beat") tracking."""
 
     def __init__(
         self,
@@ -135,22 +139,40 @@ class BinanceFeed:
     PERIOD_SECS = {"1d": 86400, "4h": 14400, "1h": 3600, "15m": 900}
 
     async def _refresh_daily_open(self) -> None:
-        """Kunin ang open ng KASALUKUYANG period candle ('Price to Beat').
+        """Kunin ang 'Price to Beat' ng KASALUKUYANG period.
 
-        Gumagana sa kahit anong interval (1d/4h/1h/15m) — ang huling kline
-        ay ang in-progress na period; index 1 = open, index 0 = aligned
-        na period start (ms).
+        4h/1h/15m: open ng in-progress na period candle (UTC-aligned);
+        index 1 = open, index 0 = aligned na period start (ms).
+
+        1d (Polymarket daily): ang strike ay ang CLOSE ng 1m candle sa
+        nakaraang TANGHALI ET — ganito ang settlement rule ng
+        'Bitcoin Up or Down on <date>?' markets, HINDI 00:00 UTC open.
         """
         async with httpx.AsyncClient(base_url=BINANCE_REST_URL, timeout=10) as client:
-            resp = await client.get(
-                "/api/v3/klines",
-                params={"symbol": "BTCUSDT",
-                        "interval": self._period_interval, "limit": 1},
-            )
-            resp.raise_for_status()
-            kline = resp.json()[0]
-            self.daily_open = float(kline[1])  # index 1 = open price
-            self._period_start = kline[0] / 1000.0
+            if self._period_interval == "1d":
+                anchor = period_start_utc(
+                    dt.datetime.now(dt.timezone.utc), "daily"
+                )
+                resp = await client.get(
+                    "/api/v3/klines",
+                    params={"symbol": "BTCUSDT", "interval": "1m",
+                            "startTime": int(anchor.timestamp() * 1000),
+                            "limit": 1},
+                )
+                resp.raise_for_status()
+                kline = resp.json()[0]
+                self.daily_open = float(kline[4])  # index 4 = close (strike)
+                self._period_start = anchor.timestamp()
+            else:
+                resp = await client.get(
+                    "/api/v3/klines",
+                    params={"symbol": "BTCUSDT",
+                            "interval": self._period_interval, "limit": 1},
+                )
+                resp.raise_for_status()
+                kline = resp.json()[0]
+                self.daily_open = float(kline[1])  # index 1 = open price
+                self._period_start = kline[0] / 1000.0
             self._on_daily_open(self.daily_open)
 
     async def fetch_klines(self, interval: str, limit: int) -> list:
@@ -185,9 +207,13 @@ class BinanceFeed:
 
     async def _check_day_rollover(self) -> None:
         """Mag-refresh ng period open kapag pumasok na sa bagong period."""
-        secs = self.PERIOD_SECS[self._period_interval]
-        now = dt.datetime.now(dt.timezone.utc).timestamp()
-        aligned = now - now % secs
+        now_utc = dt.datetime.now(dt.timezone.utc)
+        if self._period_interval == "1d":
+            aligned = period_start_utc(now_utc, "daily").timestamp()
+        else:
+            secs = self.PERIOD_SECS[self._period_interval]
+            ts = now_utc.timestamp()
+            aligned = ts - ts % secs
         if self._period_start is None or aligned != self._period_start:
             await self._refresh_daily_open()
 

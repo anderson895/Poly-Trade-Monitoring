@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from typing import Optional
+from zoneinfo import ZoneInfo  # stdlib; sa Windows kailangan ng tzdata pkg
 
 import httpx
 
@@ -130,17 +131,21 @@ def _order_id(resp: object) -> str:
 def build_market_slugs(timeframe: str, now_utc: dt.datetime) -> list[str]:
     """Slug candidates ng KASALUKUYANG BTC Up/Down market ng timeframe.
 
-    Mga pattern — VERIFIED sa totoong Gamma API (2026-07-11):
-    - daily : 'bitcoin-up-or-down-on-july-11-2026' (legacy fallback:
-              walang year)
+    Mga pattern — VERIFIED sa totoong Gamma API (2026-07-11/12):
+    - daily : 'bitcoin-up-or-down-on-july-12-2026' — naka-pangalan sa araw
+              ng SETTLEMENT (tanghali ET); ang period ay tanghali-ET ->
+              tanghali-ET, kaya pagkalampas ng 12PM ET ay BUKAS na ang
+              petsa ng aktibong market (legacy fallback: walang year)
     - 15m/4h: 'btc-updown-15m-<period_start_unix>' (UTC-aligned)
     - 1h    : 'bitcoin-up-or-down-july-13-2026-9am-et' (naka-pangalan sa
               ET hour — kailangan ng America/New_York conversion, may DST)
     """
     if timeframe == "daily":
+        et = now_utc.astimezone(ZoneInfo("America/New_York"))
+        settle = et.date() if et.hour < 12 else et.date() + dt.timedelta(days=1)
         base = (f"bitcoin-up-or-down-on-"
-                f"{now_utc.strftime('%B').lower()}-{now_utc.day}")
-        return [f"{base}-{now_utc.year}", base]  # bago muna, tapos legacy
+                f"{settle.strftime('%B').lower()}-{settle.day}")
+        return [f"{base}-{settle.year}", base]  # bago muna, tapos legacy
 
     if timeframe in ("15m", "4h"):
         secs = {"15m": 900, "4h": 14400}[timeframe]
@@ -149,8 +154,6 @@ def build_market_slugs(timeframe: str, now_utc: dt.datetime) -> list[str]:
         return [f"btc-updown-{timeframe}-{start}"]
 
     if timeframe == "1h":
-        from zoneinfo import ZoneInfo  # stdlib; sa Windows kailangan ng tzdata pkg
-
         et = now_utc.astimezone(ZoneInfo("America/New_York"))
         hour12 = et.strftime("%I").lstrip("0")  # '9', '12' — walang zero
         ampm = et.strftime("%p").lower()        # 'am' / 'pm'

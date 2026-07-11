@@ -208,7 +208,7 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 - [x] ~~Death-trap filter: economic calendar toggle~~ ✅ DONE (2026-07-11) — manual checkbox sa Settings, naka-store ang petsa kaya auto-expire kinabukasan
 - [x] ~~Death-trap filter: Coinbase premium check~~ ✅ DONE (2026-07-11) — Coinbase spot vs Binance kada 60s, direction-aware veto sa ±0.15% (configurable); fail-open kung walang Coinbase data
 - [x] ~~Error handling + alerting sa UI~~ ✅ DONE (2026-07-11) — dismissible red alert banner sa main window tuwing ERROR (failed BUY/SELL orders ay naka-wrap na sa try/except at nagla-log ng ERROR); full tracebacks pa rin sa `data/app.log`
-- [x] ~~PyInstaller packaging~~ ✅ DONE (2026-07-11) — **onedir** `dist/PolyTradePro/` (mas mabilis magbukas kaysa onefile), build gamit ang **venv313/Python 3.13**; ang `data/` ay sa tabi ng exe via `src/core/paths.py`; buong build command at gotchas sa README
+- [x] ~~PyInstaller packaging~~ ✅ DONE (2026-07-11) — **onedir** `dist/PolyTradePro/` (mas mabilis magbukas kaysa onefile), build gamit ang **Python 3.13 venv** (dating `venv313`, na-rename na sa `venv` 2026-07-12); ang `data/` ay sa tabi ng exe via `src/core/paths.py`; buong build command at gotchas sa README
 - [ ] End-to-end testing sa maliit na real USDC amount — *kailangan ng user ang keys + USDC (may creds na sa Credential Manager; 0 pa ang balance)*
 
 ### Phase 5 — Released + Post-Release Features ✅ (2026-07-11)
