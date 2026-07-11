@@ -16,7 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from py_clob_client.order_builder.constants import BUY, SELL
+from py_clob_client_v2 import Side
 
 from src.execution.polymarket import (
     DailyBtcMarket,
@@ -37,10 +37,10 @@ def make_client(mock_clob: MagicMock) -> PolymarketClient:
 class TestPolymarketClient(unittest.TestCase):
     def test_connect_derives_and_sets_creds(self) -> None:
         clob = MagicMock()
-        clob.create_or_derive_api_creds.return_value = {"apiKey": "k"}
+        clob.create_or_derive_api_key.return_value = {"apiKey": "k"}
         client = make_client(clob)
         client.connect()
-        clob.create_or_derive_api_creds.assert_called_once()
+        clob.create_or_derive_api_key.assert_called_once()
         clob.set_api_creds.assert_called_once_with({"apiKey": "k"})
 
     def test_usdc_balance_parses_6_decimals(self) -> None:
@@ -49,18 +49,28 @@ class TestPolymarketClient(unittest.TestCase):
         self.assertEqual(make_client(clob).get_usdc_balance(), 250.0)
 
     def test_best_prices_from_order_book(self) -> None:
+        # CLOB V2: dict ang order book response
         clob = MagicMock()
-        clob.get_order_book.return_value = SimpleNamespace(
-            bids=[SimpleNamespace(price="0.18"), SimpleNamespace(price="0.19")],
-            asks=[SimpleNamespace(price="0.22"), SimpleNamespace(price="0.21")],
-        )
+        clob.get_order_book.return_value = {
+            "bids": [{"price": "0.18"}, {"price": "0.19"}],
+            "asks": [{"price": "0.22"}, {"price": "0.21"}],
+        }
         bid, ask = make_client(clob).get_best_prices("tok")
         self.assertEqual(bid, 0.19)  # pinakamataas na bid
         self.assertEqual(ask, 0.21)  # pinakamababang ask
 
+    def test_best_prices_v1_object_book(self) -> None:
+        # Backward-compat: V1-style object na may .bids/.asks attrs
+        clob = MagicMock()
+        clob.get_order_book.return_value = SimpleNamespace(
+            bids=[SimpleNamespace(price="0.18")],
+            asks=[SimpleNamespace(price="0.22")],
+        )
+        self.assertEqual(make_client(clob).get_best_prices("tok"), (0.18, 0.22))
+
     def test_best_prices_empty_book(self) -> None:
         clob = MagicMock()
-        clob.get_order_book.return_value = SimpleNamespace(bids=[], asks=[])
+        clob.get_order_book.return_value = {"bids": [], "asks": []}
         self.assertEqual(make_client(clob).get_best_prices("tok"), (None, None))
 
     def test_buy_limit_computes_shares(self) -> None:
@@ -72,14 +82,14 @@ class TestPolymarketClient(unittest.TestCase):
         self.assertEqual(args.token_id, "tok")
         self.assertEqual(args.price, 0.20)
         self.assertEqual(args.size, 100.0)  # 20 USDC / 0.20 = 100 shares
-        self.assertEqual(args.side, BUY)
+        self.assertEqual(args.side, Side.BUY)
 
     def test_sell_limit(self) -> None:
         clob = MagicMock()
         clob.create_and_post_order.return_value = {"success": True, "orderID": "ord2"}
         make_client(clob).sell_limit("tok", price=0.45, shares=100.0)
         args = clob.create_and_post_order.call_args[0][0]
-        self.assertEqual(args.side, SELL)
+        self.assertEqual(args.side, Side.SELL)
         self.assertEqual(args.size, 100.0)
 
     def test_rejected_order_raises(self) -> None:

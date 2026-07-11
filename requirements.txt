@@ -8,8 +8,9 @@ truststore>=0.9
 pyqtgraph>=0.13
 qtawesome>=1.4
 
-# Phase 3 (live execution)
-py-clob-client>=0.17
+# Phase 3 (live execution) — CLOB V2 (2026-04-28 migration); ang lumang
+# py-clob-client ay tinatanggihan na ng server ("invalid order version")
+py-clob-client-v2>=1.0
 
 # Candlestick chart (lazy-loaded kapag pinili ang "Candles" sa dashboard)
 finplot>=1.9

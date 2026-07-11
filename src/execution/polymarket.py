@@ -19,13 +19,15 @@ from zoneinfo import ZoneInfo  # stdlib; sa Windows kailangan ng tzdata pkg
 
 import httpx
 
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import (
+# CLOB V2 (2026-04-28 migration): ang lumang py-clob-client ay tinanggihan
+# na ng server ("invalid order version") — py-clob-client-v2 na ang gamit
+from py_clob_client_v2 import (
     AssetType,
     BalanceAllowanceParams,
+    ClobClient,
     OrderArgs,
+    Side,
 )
-from py_clob_client.order_builder.constants import BUY, SELL
 
 from src.storage.db import Database
 from src.strategy.mean_reversion import Position
@@ -74,7 +76,7 @@ class PolymarketClient:
 
     def connect(self) -> None:
         """I-derive ang L2 API creds mula sa private key."""
-        creds = self._client.create_or_derive_api_creds()
+        creds = self._client.create_or_derive_api_key()
         self._client.set_api_creds(creds)
         self._connected = True
 
@@ -91,10 +93,23 @@ class PolymarketClient:
     # ------------------------------------------------------------- pricing
 
     def get_best_prices(self, token_id: str) -> tuple[Optional[float], Optional[float]]:
-        """(best_bid, best_ask) mula sa order book; None kung walang liquidity."""
+        """(best_bid, best_ask) mula sa order book; None kung walang liquidity.
+
+        Sa CLOB V2, ang order book ay dict na (`{"bids": [{"price": ...}]}`)
+        imbes na object — parehong sinusuportahan dito.
+        """
         book = self._client.get_order_book(token_id)
-        best_bid = max((float(b.price) for b in book.bids), default=None)
-        best_ask = min((float(a.price) for a in book.asks), default=None)
+        if isinstance(book, dict):
+            bids, asks = book.get("bids") or [], book.get("asks") or []
+        else:  # V1-style object (ginagamit pa ng test mocks)
+            bids, asks = book.bids, book.asks
+
+        def px(level: object) -> float:
+            return float(level["price"] if isinstance(level, dict)
+                         else level.price)
+
+        best_bid = max((px(b) for b in bids), default=None)
+        best_ask = min((px(a) for a in asks), default=None)
         return best_bid, best_ask
 
     # -------------------------------------------------------------- orders
@@ -103,13 +118,15 @@ class PolymarketClient:
         """Limit BUY; size = shares (usdc / price). Ibinabalik ang order ID."""
         shares = round(usdc / price, 2)
         resp = self._client.create_and_post_order(
-            OrderArgs(token_id=token_id, price=price, size=shares, side=BUY)
+            OrderArgs(token_id=token_id, price=price, size=shares,
+                      side=Side.BUY)
         )
         return _order_id(resp)
 
     def sell_limit(self, token_id: str, price: float, shares: float) -> str:
         resp = self._client.create_and_post_order(
-            OrderArgs(token_id=token_id, price=price, size=round(shares, 2), side=SELL)
+            OrderArgs(token_id=token_id, price=price, size=round(shares, 2),
+                      side=Side.SELL)
         )
         return _order_id(resp)
 
