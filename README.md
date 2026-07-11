@@ -182,8 +182,19 @@ Mag-test muna nang matagal sa Paper mode.
 
 ### Recommended: folder build (onedir) — MABILIS magbukas (~2s)
 
+**Gamitin ang `venv313` (Python 3.13) sa pag-build** — ang lumang venv ay
+Python 3.10.0 na may CPython bug (bpo-45757) na nagpapa-crash sa PyInstaller
+kapag siniscan ang pandas/Pillow:
+
 ```powershell
-.\venv\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PIL src\main.py
+.\venv313\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PyQt6 src\main.py
+```
+
+Kung wala pa ang `venv313`:
+```powershell
+& "C:\Program Files\Python313\python.exe" -m venv venv313
+.\venv313\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+.\venv313\Scripts\python.exe -m pip uninstall -y PyQt6 PyQt6-Qt6 PyQt6_sip
 ```
 
 - Output: **`dist\PolyTradePro\`** folder (~177 MB) — i-zip ang BUONG folder
@@ -202,10 +213,14 @@ Mag-test muna nang matagal sa Paper mode.
 
 ### Mga paalala sa build
 
-- **⚠️ HUWAG tanggalin ang `--exclude-module PIL`** — ang Python 3.10.0 ay may
-  CPython bug (bpo-45757) na nagpapa-crash sa PyInstaller kapag siniscan ang
-  Pillow. Ang Pillow ay pang-icon-generation lang (`tests\make_icon.py`),
-  hindi kailangan ng app mismo.
+- **⚠️ PyQt6 conflict**: ang pag-install ng finplot ay nagdadala ng PyQt6 —
+  i-uninstall ito sa build venv (`pip uninstall PyQt6 PyQt6-Qt6 PyQt6_sip`)
+  at panatilihin ang `--exclude-module PyQt6`; hindi sinusuportahan ng
+  PyInstaller ang dalawang Qt bindings, at nagba-bind pa ang qtawesome sa
+  maling Qt kapag naiwan ito.
+- **⚠️ HUWAG mag-build gamit ang lumang venv (Python 3.10.0)** — may CPython
+  bug (bpo-45757) na nagpapa-IndexError sa PyInstaller scanner kapag
+  siniscan ang pandas/Pillow.
 - **Icon sa Explorer mukhang luma/walang icon pagkatapos ng rebuild?**
   Icon cache lang iyon ng Windows — patakbuhin ang `ie4uinit.exe -show`,
   o i-rename ang exe, o i-restart ang Explorer.
