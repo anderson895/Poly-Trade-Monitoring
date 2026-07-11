@@ -132,21 +132,29 @@ def find_daily_btc_market(
 ) -> DailyBtcMarket:
     """Hanapin ang daily BTC Up/Down market sa Gamma API.
 
-    Slug pattern (i-verify kapag may access na): e.g.
-    'bitcoin-up-or-down-on-july-11'.
+    Slug pattern — VERIFIED sa totoong Gamma API (2026-07-11):
+    'bitcoin-up-or-down-on-july-11-2026' (may year suffix ang mga bago;
+    ang mga luma ay walang year, kaya may fallback).
     """
-    slug = f"bitcoin-up-or-down-on-{date_utc.strftime('%B').lower()}-{date_utc.day}"
+    base = f"bitcoin-up-or-down-on-{date_utc.strftime('%B').lower()}-{date_utc.day}"
+    slugs = [f"{base}-{date_utc.year}", base]  # bago muna, tapos legacy
     client = http_client or httpx.Client(timeout=15)
+    markets: list = []
     try:
-        resp = client.get(f"{GAMMA_API}/markets", params={"slug": slug})
-        resp.raise_for_status()
-        markets = resp.json()
+        for slug in slugs:
+            resp = client.get(f"{GAMMA_API}/markets", params={"slug": slug})
+            resp.raise_for_status()
+            markets = resp.json()
+            if markets:
+                break
     finally:
         if http_client is None:
             client.close()
 
     if not markets:
-        raise PolymarketError(f"Walang nahanap na market para sa slug '{slug}'")
+        raise PolymarketError(
+            f"Walang nahanap na market para sa slugs {slugs}"
+        )
 
     market = markets[0]
     outcomes = _as_list(market.get("outcomes", "[]"))

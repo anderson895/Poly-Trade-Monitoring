@@ -130,7 +130,7 @@ Mula sa reference sa `details.txt`:
 - [x] Settings UI: API Key, Private Key, Risk USDC — stored via `keyring`
 - [x] SQLite schema: trades, logs, settings
 
-> ⚠️ **Phase 1 finding:** Ang lahat ng Polymarket endpoints (clob, gamma-api, polymarket.com) ay **hindi ma-reach mula sa network na ito** (timeouts/cert errors), habang OK ang Binance at internet. Malamang naka-block ang Polymarket sa ISP level. Kailangan itong maresolba (at i-verify ang legality sa inyong jurisdiction) bago ang Phase 3 (live execution). Ang Phase 2 (strategy + paper trading) ay hindi apektado — Binance data lang ang kailangan.
+> ✅ **Phase 1 finding — RESOLVED (2026-07-11):** Ang Polymarket endpoints ay dating hindi ma-reach dahil sa **ISP DNS poisoning** (bina-blackhole ng ISP DNS ang `*.polymarket.com`). Naresolba via **in-app DoH resolver** (`src/core/netdns.py`) — DNS-over-HTTPS (Cloudflare/Google) para sa Polymarket hosts lamang, system DNS pa rin ang iba. Kumpirmado sa smoke tests: lahat ng 3 endpoints (clob, gamma-api, polymarket.com) ay `200 OK` na. *(Paalala pa rin: i-verify ang legality/compliance sa inyong jurisdiction bago mag-live.)*
 
 ### Phase 2 — Strategy & Paper Trading ✅ DONE (2026-07-11)
 - [x] Mean reversion strategy module (pure functions + 18 unit tests, all passing)
@@ -149,16 +149,18 @@ Mula sa reference sa `details.txt`:
 - [x] Risk controls: max position = Risk USDC, max trades/day, kill-switch sa STOP
 - [x] Trading Mode selector sa Settings (Paper/Live), auto-fallback sa Paper kapag hindi makakonekta
 - [x] Live USDC balance display + error logging sa `data/app.log` (may full tracebacks)
-- [ ] **HINDI PA NA-VE-VERIFY sa totoong Polymarket API** — blocked ang network dito. Kapag na-test na sa machine na may access: i-verify ang Gamma API slug pattern (`bitcoin-up-or-down-on-{month}-{day}`), tapos mag-test muna gamit ang napakaliit na USDC (~$5–10)
+- [x] ~~I-verify ang Gamma API slug pattern~~ ✅ VERIFIED (2026-07-11) — ang tamang slug ay **`bitcoin-up-or-down-on-{month}-{day}-{year}`** (may year suffix; ang lumang pattern na walang year ay retained bilang fallback). Live-tested: nahanap ang "Bitcoin Up or Down on July 11?" + tama ang UP/DOWN token mapping. May discovery scripts sa `tests/verify_gamma_slug.py` at `tests/discover_gamma_*.py`
+- [x] ~~signature_type hardcoded~~ ✅ DONE (2026-07-11) — "Polymarket Sign-up Method" dropdown na sa Settings (Email/Magic = 1, MetaMask = 2); wala nang code change kahit anong wallet ang user
+- [ ] **HINDI PA NA-VE-VERIFY ang order placement na may totoong pera** — mag-test gamit ang napakaliit na USDC (~$5–10). *Kailangan ng user ang Private Key + Funder Address + USDC. Tingnan ang step.txt (end-user guide).*
 
 ### Phase 4 — Hardening & Packaging (Week 4–5)
-- [ ] Reconnect/resume logic (WebSocket drops, app restart with open position)
+- [x] ~~Reconnect/resume logic~~ ✅ DONE (2026-07-11) — WebSocket auto-reconnect (dati na); **position resume sa app restart**: naka-persist ang open position sa SQLite, nire-restore sa START kung same UTC day + same mode; stale (ibang araw) = discarded na may WARN; naiwang LIVE position habang PAPER mode = malakas na ERROR alert; 8 unit tests (`tests/test_resume.py`)
 - [x] ~~Death-trap filter: volume escalation detection~~ ✅ DONE (2026-07-11) — hourly Binance volumes, recent 3h avg vs prior 20h baseline, blocks entry kapag ≥2× (configurable sa Settings); 7 unit tests
 - [x] ~~Death-trap filter: economic calendar toggle~~ ✅ DONE (2026-07-11) — manual checkbox sa Settings, naka-store ang petsa kaya auto-expire kinabukasan
 - [x] ~~Death-trap filter: Coinbase premium check~~ ✅ DONE (2026-07-11) — Coinbase spot vs Binance kada 60s, direction-aware veto sa ±0.15% (configurable); fail-open kung walang Coinbase data
-- [ ] Error handling + alerting sa UI (failed orders, rejected transactions)
-- [ ] PyInstaller packaging → single `.exe`
-- [ ] End-to-end testing sa maliit na real USDC amount
+- [x] ~~Error handling + alerting sa UI~~ ✅ DONE (2026-07-11) — dismissible red alert banner sa main window tuwing ERROR (failed BUY/SELL orders ay naka-wrap na sa try/except at nagla-log ng ERROR); full tracebacks pa rin sa `data/app.log`
+- [x] ~~PyInstaller packaging~~ ✅ DONE (2026-07-11) — single `PolyTradePro.exe` (onefile, windowed); ang `data/` ay ginagawa sa TABI ng .exe (hindi temp dir) via `src/core/paths.py`
+- [ ] End-to-end testing sa maliit na real USDC amount — *kailangan ng user ang keys + USDC*
 
 ---
 

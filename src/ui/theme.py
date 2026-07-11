@@ -81,24 +81,77 @@ QComboBox {{
     background: {INPUT_BG};
     border: 1px solid {BORDER};
     border-radius: 6px;
-    padding: 8px;
+    padding: 6px 10px;
+    min-height: 22px;
     color: {TEXT};
+}}
+QComboBox:focus {{ border-color: {ACCENT}; }}
+QComboBox::drop-down {{
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 26px;
+    border: none;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid {MUTED};
+    margin-right: 8px;
 }}
 QComboBox QAbstractItemView {{
     background: {CARD};
     border: 1px solid {BORDER};
     color: {TEXT};
     selection-background-color: {ACCENT_DIM};
+    padding: 4px;
 }}
 
 QLineEdit, QDoubleSpinBox, QSpinBox {{
     background: {INPUT_BG};
     border: 1px solid {BORDER};
     border-radius: 6px;
-    padding: 8px;
+    padding: 6px 10px;
+    min-height: 22px;
     color: {TEXT};
 }}
 QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus {{ border-color: {ACCENT}; }}
+
+QDoubleSpinBox::up-button, QSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    width: 24px;
+    border-left: 1px solid {BORDER};
+    border-bottom: 1px solid {BORDER};
+    border-top-right-radius: 6px;
+    background: {CARD};
+}}
+QDoubleSpinBox::down-button, QSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    width: 24px;
+    border-left: 1px solid {BORDER};
+    border-bottom-right-radius: 6px;
+    background: {CARD};
+}}
+QDoubleSpinBox::up-button:hover, QSpinBox::up-button:hover,
+QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover {{
+    background: #374151;
+}}
+QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {{
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid {MUTED};
+}}
+QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {{
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid {MUTED};
+}}
+
+QScrollArea {{ background: transparent; border: none; }}
 
 QTableWidget {{
     background: {CARD};

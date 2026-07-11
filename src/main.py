@@ -22,10 +22,12 @@ install_doh_resolver()  # DoH para sa *.polymarket.com — iwas sa ISP DNS poiso
 
 import qasync
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from src.core.applog import asyncio_exception_handler, setup_logging
 from src.core.engine import BotEngine
+from src.core.paths import resource_path
 from src.storage.db import Database
 from src.ui.main_window import MainWindow
 
@@ -35,6 +37,9 @@ def main() -> None:
 
     app = QApplication(sys.argv)
     app.setApplicationName("PolyTrade Bot")
+    icon_file = resource_path("icon_square.png")
+    if icon_file.exists():
+        app.setWindowIcon(QIcon(str(icon_file)))
 
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)

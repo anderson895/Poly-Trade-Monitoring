@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -80,11 +81,12 @@ class SettingsPage(QWidget):
         g = self._db.get_setting
 
         form = QVBoxLayout()
-        form.setSpacing(6)
+        form.setSpacing(8)
 
         def add_field(label: str, widget_or_layout) -> None:
             lab = QLabel(label)
             lab.setProperty("muted", True)
+            lab.setContentsMargins(0, 6, 0, 0)
             form.addWidget(lab)
             if isinstance(widget_or_layout, QHBoxLayout):
                 form.addLayout(widget_or_layout)
@@ -119,6 +121,15 @@ class SettingsPage(QWidget):
             secrets.get_secret(secrets.KEY_PM_FUNDER) or "0x… (Polymarket profile address)"
         )
         add_field("Funder / Proxy Address", self._pm_funder)
+
+        # Paano nag-sign up sa Polymarket — nagdidikta ng signature_type
+        # (1 = email/Magic, 2 = MetaMask/browser wallet)
+        self._wallet_type = QComboBox()
+        self._wallet_type.addItems(["Email / Google (Magic)", "MetaMask / browser wallet"])
+        self._wallet_type.setCurrentIndex(
+            1 if str(g("pm_signature_type", "1")) == "2" else 0
+        )
+        add_field("Polymarket Sign-up Method", self._wallet_type)
 
         # --- Numbers ------------------------------------------------------
         self._risk = _spin(float(g("risk_usdc", DEFAULTS["risk_usdc"])), "USDC")
@@ -187,16 +198,30 @@ class SettingsPage(QWidget):
 
         panel = Card()
         panel_col = QVBoxLayout(panel)
-        panel_col.setContentsMargins(16, 14, 16, 14)
+        panel_col.setContentsMargins(18, 16, 18, 16)
+        panel_col.setSpacing(10)
         panel_col.addWidget(title)
         panel_col.addLayout(form)
+        panel_col.addSpacing(4)
         panel_col.addLayout(btn_row)
         panel_col.addWidget(self._status)
         panel_col.addWidget(note)
 
+        # Scroll para hindi masiksik (at ma-clip) ang mga input sa maliliit
+        # na window — mag-i-scroll sa halip na mag-compress
+        wrapper = QWidget()
+        wrapper_col = QVBoxLayout(wrapper)
+        wrapper_col.setContentsMargins(0, 0, 8, 0)
+        wrapper_col.addWidget(panel)
+        wrapper_col.addStretch()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(wrapper)
+
         root = QVBoxLayout(self)
-        root.addWidget(panel)
-        root.addStretch()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(scroll)
 
     # ------------------------------------------------------------------ save
 
@@ -213,6 +238,9 @@ class SettingsPage(QWidget):
         self._db.set_setting(
             "trading_mode", "live" if self._mode.currentIndex() == 1 else "paper"
         )
+        self._db.set_setting(
+            "pm_signature_type", "2" if self._wallet_type.currentIndex() == 1 else "1"
+        )
         self._db.set_setting("risk_usdc", self._risk.value())
         self._db.set_setting("min_stretch_pct", self._min_stretch.value())
         self._db.set_setting("max_stretch_pct", self._max_stretch.value())
@@ -227,6 +255,7 @@ class SettingsPage(QWidget):
 
     def _reset(self) -> None:
         self._mode.setCurrentIndex(0)  # laging Paper ang default
+        self._wallet_type.setCurrentIndex(0)
         self._risk.setValue(DEFAULTS["risk_usdc"])
         self._min_stretch.setValue(DEFAULTS["min_stretch_pct"])
         self._max_stretch.setValue(DEFAULTS["max_stretch_pct"])

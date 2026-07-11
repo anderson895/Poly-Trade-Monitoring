@@ -5,3 +5,6 @@ data/
 details.txt
 step.txt
 .env
+build/
+dist/
+*.spec

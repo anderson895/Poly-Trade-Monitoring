@@ -147,7 +147,10 @@ class BotEngine(QObject):
                 raise PolymarketError(
                     "Walang Polymarket Private Key / Funder Address sa Settings"
                 )
-            client = PolymarketClient(private_key=pk, funder=funder)
+            sig_type = int(self._db.get_setting("pm_signature_type", 1))
+            client = PolymarketClient(
+                private_key=pk, funder=funder, signature_type=sig_type
+            )
             await asyncio.to_thread(client.connect)
             today = dt.datetime.now(dt.timezone.utc).date()
             market = await asyncio.to_thread(find_daily_btc_market, today)

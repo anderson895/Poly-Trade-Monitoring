@@ -111,13 +111,31 @@ class TestMarketDiscovery(unittest.TestCase):
             "clobTokenIds": '["tok_down", "tok_up"]',
         }])
         market = find_daily_btc_market(dt.date(2026, 7, 11), http_client=http)
-        # Tamang slug ang hiniling
-        self.assertIn("bitcoin-up-or-down-on-july-11",
+        # Tamang slug ang hiniling — may year suffix (verified 2026-07-11)
+        self.assertIn("bitcoin-up-or-down-on-july-11-2026",
                       str(http.get.call_args))
         # Tamang mapping kahit baligtad ang outcomes order
         self.assertEqual(market.token_up, "tok_up")
         self.assertEqual(market.token_down, "tok_down")
         self.assertEqual(market.token_for("DOWN"), "tok_down")
+
+    def test_falls_back_to_legacy_slug_without_year(self) -> None:
+        http = MagicMock()
+        http.get.side_effect = [
+            FakeResponse([]),  # walang market sa year slug
+            FakeResponse([{
+                "question": "Bitcoin Up or Down on July 11?",
+                "outcomes": '["Up", "Down"]',
+                "clobTokenIds": '["tok_up", "tok_down"]',
+            }]),
+        ]
+        market = find_daily_btc_market(dt.date(2026, 7, 11), http_client=http)
+        self.assertEqual(market.token_up, "tok_up")
+        self.assertEqual(http.get.call_count, 2)
+        # Ang pangalawang tawag ay ang legacy slug na walang year
+        legacy_call = str(http.get.call_args_list[1])
+        self.assertIn("bitcoin-up-or-down-on-july-11", legacy_call)
+        self.assertNotIn("-2026", legacy_call)
 
     def test_no_market_found_raises(self) -> None:
         http = MagicMock()

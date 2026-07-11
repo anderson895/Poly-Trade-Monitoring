@@ -1,7 +1,19 @@
-"""Phase 1 smoke test: DB + Binance REST (daily open) + status endpoints."""
-import asyncio
+"""Phase 1 smoke test: DB + Binance REST (daily open) + status endpoints.
 
-import httpx
+Ginagaya ang app startup (main.py): truststore + DoH resolver, para ang
+tine-test ay ang aktwal na network path na ginagamit ng app.
+"""
+import truststore
+
+truststore.inject_into_ssl()
+
+from src.core.netdns import install_doh_resolver  # noqa: E402
+
+install_doh_resolver()  # bypass sa ISP DNS poisoning, gaya ng app
+
+import asyncio  # noqa: E402
+
+import httpx  # noqa: E402
 
 from src.core.status import ConnectionMonitor
 from src.feed.binance import BinanceFeed
@@ -11,8 +23,9 @@ from src.storage.db import Database
 def test_db() -> None:
     db = Database()
     db.add_log("INFO", "Phase 1 smoke test")
-    db.set_setting("risk_usdc", 20.0)
-    assert db.get_setting("risk_usdc") == "20.0"
+    # Test key lang — huwag galawin ang totoong risk_usdc setting ng user
+    db.set_setting("_smoke_test", 20.0)
+    assert db.get_setting("_smoke_test") == "20.0"
     assert len(db.recent_logs()) >= 1
     print("[OK] SQLite DB - logs:", len(db.recent_logs()))
     db.close()

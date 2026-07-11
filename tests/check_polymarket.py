@@ -1,7 +1,15 @@
-"""One-off check: alin sa mga Polymarket endpoints ang reachable dito."""
+"""One-off check: alin sa mga Polymarket endpoints ang reachable dito.
+
+Ginagaya ang app startup (main.py): truststore + DoH resolver, para ang
+tine-test ay ang aktwal na network path na ginagamit ng app.
+"""
 import truststore
 
 truststore.inject_into_ssl()
+
+from src.core.netdns import install_doh_resolver  # noqa: E402
+
+install_doh_resolver()  # bypass sa ISP DNS poisoning, gaya ng app
 
 import httpx  # noqa: E402
 
