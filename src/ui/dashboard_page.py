@@ -54,12 +54,17 @@ class DashboardPage(QWidget):
         self.bot_card.set_value("STOPPED", theme.RED)
         self.balance_card = StatCard("Paper Balance", "—", "Simulated — no real money")
 
+        # Ang balance card ay kapareho ng lapad ng Recent Logs column sa
+        # ilalim nito (340px) para pantay ang mga gilid — hindi gulo
+        RIGHT_COL_WIDTH = 340
+        self.balance_card.setFixedWidth(RIGHT_COL_WIDTH)
+
         cards_row = QHBoxLayout()
         cards_row.setSpacing(10)
         for card in self.cards.values():
             cards_row.addWidget(card, stretch=1)
         cards_row.addWidget(self.bot_card, stretch=1)
-        cards_row.addWidget(self.balance_card, stretch=1)
+        cards_row.addWidget(self.balance_card)
 
         # ---- Chart panel --------------------------------------------------
         chart_title = QLabel("BTC Price (USDT)")
