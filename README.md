@@ -1,243 +1,190 @@
 # PolyTrade Pro — Polymarket Trading Bot
 
-Desktop trading bot para sa daily BTC Up/Down markets ng Polymarket, gamit ang
-**Mean Reversion / "Rubber Band"** strategy. Binance (read-only) ang BTC price
-feed. May **PAPER mode** (simulated, walang totoong pera) at **LIVE mode**
-(totoong USDC sa Polymarket).
+A Windows desktop trading bot for Polymarket's **daily BTC Up/Down markets**, powered by a **Mean Reversion ("Rubber Band")** strategy. Binance provides the read-only BTC price feed; trades execute on Polymarket's on-chain order book (Polygon network).
+
+Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real USDC on Polymarket).
 
 ---
 
-## Requirements
+## Features
 
-- Windows 10/11
-- Python 3.10 (naka-setup na sa `venv\`)
-- Internet connection
-
-Kung kailangan i-install ulit ang dependencies:
-
-```powershell
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-```
+- 📈 **Live BTC chart** — line and candlestick views with volume bars, Binance-style time filters (1s · 15m · 1H · 4H · 1D · 1W · YTD · All), hover crosshair with exact price/time, auto-follow, and 2-hour history prefill on launch
+- 🤖 **Automated strategy** — daily-open anchor, 1.5%–2.5% stretch entry window (4–12h UTC), 15¢–25¢ share price gate, profit target / stop loss / end-of-day exits, one trade per day
+- 🛡️ **"Death trap" filters** — volume escalation veto, Coinbase premium veto, and a manual Economic Data Day block
+- 📊 **Full dashboard** — connection status (Internet / Binance / Polymarket), bot status, live balance, trades table, statistics (win rate, PnL), and logs
+- 🔐 **Secure secrets** — private keys stored in Windows Credential Manager, never in files; credential verification on save
+- 🔁 **Resilience** — WebSocket auto-reconnect, position resume after restart, automatic fallback to Paper mode when Live setup fails, in-app DoH resolver that bypasses ISP DNS poisoning of Polymarket domains
+- 🖥️ **Polished UI** — dark theme, collapsible sidebar, error alert banner, pointer cursors, mode-aware settings form
 
 ---
 
-## Paano I-test — Step by Step
+## Technology Stack
 
-### STEP 1: Patakbuhin ang Automated Unit Tests (offline, walang internet na kailangan)
-
-Ito ang pinakamabilis na check na tama ang strategy logic:
-
-```powershell
-.\venv\Scripts\python.exe -m pytest tests\test_mean_reversion.py tests\test_filters.py tests\test_polymarket.py tests\test_netdns.py tests\test_resume.py -v
-```
-
-**Expected:** lahat PASS (57 tests). Sinasaklaw nito:
-
-| Test file | Ano ang tine-test |
+### Core
+| Technology | Purpose |
 |---|---|
-| `test_mean_reversion.py` | Entry/exit rules: entry window (4–12h UTC), stretch band (1.5%–2.5%), share price range (15¢–25¢), profit target, stop loss, EOD exit |
-| `test_filters.py` | Death trap guards: volume escalation veto at Coinbase premium veto |
-| `test_polymarket.py` | Polymarket market parsing at live executor logic |
-| `test_netdns.py` | In-app DoH resolver (bypass sa ISP DNS blocking) |
-| `test_resume.py` | Position resume sa app restart (restore/stale/mode-mismatch rules) |
+| **Python 3.13** (runtime/build) / 3.10 (dev venv) | Application language |
+| **PySide6 (Qt 6)** | Desktop UI framework (official Qt for Python) |
+| **qasync** | Bridges the Qt event loop with `asyncio` so WebSockets and UI run on one loop |
+| **SQLite** (built-in `sqlite3`) | Local storage for trades, logs, and settings |
 
-### STEP 2: Smoke Tests (kailangan ng internet)
+### Charting
+| Technology | Purpose |
+|---|---|
+| **pyqtgraph** | High-performance real-time line chart (price, crosshair, price badge) |
+| **finplot** | Candlestick + volume chart (lazy-loaded when the Candles view is selected) |
+| **pandas / NumPy** | OHLCV data handling for the candlestick chart |
+| **QtAwesome** | Font Awesome icons throughout the UI |
 
-Chine-check nito na maabot ang mga totoong endpoints:
+### Networking & Data
+| Technology | Purpose |
+|---|---|
+| **websockets** | Binance combined stream (`miniTicker` + `kline_1m`) for live prices and candles |
+| **httpx** | Async REST calls (Binance klines/history, Polymarket Gamma API, connection checks) |
+| **truststore** | TLS verification via the native Windows certificate store |
+| **Custom DoH resolver** | DNS-over-HTTPS (Cloudflare/Google) scoped to `*.polymarket.com` — defeats ISP DNS poisoning by patching `socket.getaddrinfo` |
 
+### Web3 / Blockchain
+| Technology | Purpose |
+|---|---|
+| **py-clob-client** | Official Polymarket CLOB client — order signing and placement |
+| **Polygon network** | The Ethereum L2 where Polymarket markets and USDC live |
+| **USDC** | Settlement currency (ERC-20 stablecoin) |
+| **Cryptographic order signing** | Orders are signed with the user's wallet private key (EIP-712 style); API credentials are derived from the key — no username/password |
+| **Polymarket Gamma API** | Daily BTC Up/Down market discovery |
+
+### Security & Packaging
+| Technology | Purpose |
+|---|---|
+| **keyring** (Windows Credential Manager) | Encrypted storage for the private key and funder address |
+| **PyInstaller** | Packaging into a distributable Windows app (`dist/PolyTradePro/`) |
+| **Pillow** (dev-only) | Icon asset generation (`tests/make_icon.py`, `tests/make_arrows.py`) |
+
+---
+
+## Getting Started
+
+### Option A — Download the release (end users)
+1. Download `PolyTradePro-v1.0.0.zip` from the [Releases page](https://github.com/anderson895/Poly-Trade-Monitoring/releases)
+2. Extract the folder and run `PolyTradePro.exe` inside
+3. The app starts in **Paper mode** (no real money). See `step.txt` for the Live-mode setup guide
+
+### Option B — Run from source (developers)
 ```powershell
-# DB + Binance REST + status endpoints + WebSocket stream
-.\venv\Scripts\python.exe -m tests.smoke_phase1
-
-# Hourly volume fetch + escalation check sa totoong Binance data
-.\venv\Scripts\python.exe -m tests.smoke_volumes
-
-# Alin sa mga Polymarket endpoints ang reachable sa network mo
-.\venv\Scripts\python.exe -m tests.check_polymarket
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+.\venv\Scripts\python.exe -m src.main    # or double-click run.bat
 ```
 
-**Expected:** mga `[OK]` lines. Kung may `[FAIL]` sa polymarket, tingnan ang
-Troubleshooting sa baba.
+Requirements: Windows 10/11, internet connection.
 
-### STEP 3: Buksan ang App at I-check ang UI
+---
 
-Double-click ang **`run.bat`** (o patakbuhin: `.\venv\Scripts\python.exe -m src.main`)
+## Testing Guide
 
-I-verify ang mga sumusunod pagbukas:
+### STEP 1 — Unit tests (offline, ~2 seconds)
 
-1. ✅ Bubukas nang maximized ang window na "PolyTrade Pro"
-2. ✅ Sa loob ng ~15 segundo, magiging **berde/Connected** ang 3 status cards:
-   **Internet**, **Binance (BTC)**, **Polymarket**
-3. ✅ **Bot Status: STOPPED** (pula) — hindi pa tumatakbo ang bot
-4. ✅ **Paper Balance** ay may laman (default: 1,000 USDC + accumulated PnL)
-5. ✅ Makikita ang mga **dating trades** sa Trades page at **logs** sa Logs page
-   (persisted sa SQLite kahit isara mo ang app)
+```powershell
+.\venv\Scripts\python.exe -m pytest tests\test_mean_reversion.py tests\test_filters.py tests\test_polymarket.py tests\test_netdns.py tests\test_resume.py tests\test_paper_e2e.py -v
+```
 
-### STEP 4: I-test ang Settings
+**Expected: 61 passed.** Coverage:
 
-1. Pumunta sa **Settings** (sidebar)
-2. I-verify na **200 USDC** ang "Risk Per Trade"
-3. Subukang i-type ang Polymarket Private Key → click
-   **Save Settings** → dapat lumabas ang "Settings saved ✓"
-4. Isara at buksan ulit ang app → dapat naka-save pa rin ang values
-   (secrets ay nasa Windows Credential Manager, hindi sa files)
-5. I-click ang **👁** icon → dapat magpakita/magtago ang secret text
+| Test file | What it verifies |
+|---|---|
+| `test_mean_reversion.py` | Entry/exit rules: entry window (4–12h UTC), stretch band, share price gate, profit target, stop loss, EOD exit |
+| `test_filters.py` | Death-trap guards: volume escalation and Coinbase premium vetoes |
+| `test_polymarket.py` | Market discovery (slug patterns) and live executor logic |
+| `test_netdns.py` | The DoH resolver (ISP DNS-poisoning bypass) |
+| `test_resume.py` | Position resume after restart (restore / stale / mode-mismatch rules) |
+| `test_paper_e2e.py` | **Full engine buy→sell simulation** — pump → BUY at ~20¢ → reversion → SELL at profit target, plus stop-loss and trade-limit cycles |
 
-### STEP 5: I-test ang Bot sa PAPER Mode (walang totoong pera)
+### STEP 2 — Smoke tests (require internet)
 
-1. Sa Settings, siguraduhing **Paper** ang Trading Mode → Save
-2. I-click ang **▶ START BOT** sa baba
-3. I-verify:
-   - ✅ **Bot Status: RUNNING** (berde)
-   - ✅ Gumagalaw ang **BTC price** at chart real-time
-   - ✅ Umaandar ang **Uptime** timer
-   - ✅ May log na *"Bot STARTED [PAPER MODE]"*
-   - ✅ Makikita ang **Daily open (00:00 UTC)** sa logs at bands sa chart
-   - ✅ Sa ilalim ng chart, makikita ang strategy status, hal.:
-     - `WATCHING — stretch +0.45% < 1.5% minimum` (normal kapag maliit ang galaw)
-     - `WATCHING — waiting for entry window (4h-12h UTC)` (kapag maaga pa)
-4. I-click ang **⏹ STOP BOT** → dapat bumalik sa STOPPED at may log na
-   *"Bot STOPPED"*
+```powershell
+.\venv\Scripts\python.exe -m tests.smoke_phase1      # DB + Binance REST/WS + status endpoints
+.\venv\Scripts\python.exe -m tests.smoke_volumes     # live hourly-volume filter check
+.\venv\Scripts\python.exe -m tests.check_polymarket  # Polymarket endpoint reachability
+.\venv\Scripts\python.exe -m tests.verify_live_creds # credential check (read-only, no orders)
+```
 
-> **Tandaan:** Sa totoong kondisyon lang bibili ang bot (stretch 1.5%–2.5%
-> mula sa daily open, sa loob ng 4–12h UTC window, share price 15¢–25¢).
-> Karaniwang **walang trade sa isang araw** kung walang malaking galaw ang BTC
-> — normal ito, hindi bug.
+### STEP 3 — Open the app and verify the UI
 
-### STEP 6 (Optional): I-test ang Buy/Sell Logic ng Bot (Paper)
+1. The window opens maximized with the robot icon
+2. Within ~15 seconds all three status cards turn green: **Internet / Binance (BTC) / Polymarket**
+3. **Bot Status: STOPPED**, and the chart is already full (2-hour history prefill) and moving — the chart is live even before START
+4. Past trades and logs persist across restarts (SQLite)
 
-**Paraan A — Automated E2E test (anumang oras, ~2 segundo):**
+### STEP 4 — Settings
+
+1. **Risk Per Trade** defaults to 200 USDC
+2. In **Live** mode the form shows Private Key / Funder Address / Sign-up Method; in **Paper** mode those are hidden
+3. Saving triggers an automatic **credential verification** with the result (and live balance) shown inline, and the dashboard balance card updates immediately — no START needed
+4. **Reset** restores strategy defaults only; it does not touch Trading Mode or Sign-up Method
+
+### STEP 5 — Paper run
+
+1. Select **Paper** mode → Save → **START BOT**
+2. Verify: status RUNNING, uptime counting, strategy status line updating (e.g., `WATCHING — stretch +0.12% < 1.5% minimum`)
+3. **STOP BOT** returns to STOPPED; the chart keeps streaming
+
+> The bot trades rarely by design — entries require a genuine ~1.7–2.3% move
+> from the daily open inside the 4–12h UTC window. A day with no trades is
+> normal, not a bug.
+
+### STEP 6 — Buy/sell logic check (any time, no waiting)
 
 ```powershell
 .\venv\Scripts\python.exe -m pytest tests\test_paper_e2e.py -v
 ```
 
-Sine-simulate nito ang buong mean-reversion na araw sa TOTOONG engine code:
-- BTC pumped +2.0% sa loob ng entry window → **bibili** ng DOWN sa ~20¢ ($200)
-- Bumalik ang presyo (reversion) → +105% ang share → **magbebenta** (profit)
-- Kasama rin: stop-loss cycle, 1-trade-per-day limit, at DB recording
+Simulates a full trading day through the real engine: entry gating, a BUY at ~20¢, holding, a SELL at the +100% profit target with correct PnL, a stop-loss cycle, and the one-trade-per-day limit. **Expected: 3 passed.**
 
-**Expected:** 3 passed. Kung pasado ito, gumagana ang buy→sell logic.
+### STEP 7 — Live mode (REAL money — start small)
 
-**Paraan B — Totoong paper validation (hintayin ang tamang araw):**
-
-Iwanan lang ang bot na naka-START sa Paper mode. Sa araw na ang BTC ay
-gumalaw ng **~1.7%–2.3%** mula sa daily open sa loob ng **12:00 PM–8:00 PM
-PH time**, kusang bibili ang bot — makikita mo sa Trades page, logs, at
-Statistics. Ito ang tunay na validation ng strategy bago mag-live.
-
-> **Bakit hindi puwedeng "pilitin" via Settings:** may share-price gate ang
-> strategy (15¢–25¢ ang OTM share) na nakatali sa laki ng stretch — kaya
-> kahit ibaba mo ang Entry Stretch Band, hindi papasok ang bot hangga't
-> walang tunay na ~1.7%+ na galaw. Sadya ito (disiplina ng strategy);
-> gamitin ang Paraan A para sa mabilis na logic check.
-
-### STEP 7 (Optional, TOTOONG PERA): I-test ang LIVE Mode
-
-⚠️ **Babala:** Gagamit ito ng totoong USDC sa Polymarket account mo.
-Mag-test muna nang matagal sa Paper mode.
-
-1. Sa Settings:
-   - Trading Mode → **Live**
-   - Ilagay ang **Polymarket Private Key** at **Funder / Proxy Address**
-   - Magsimula sa **maliit na Risk** (hal. 5–10 USDC) para sa unang live test
-   - Save Settings
-2. START BOT
-3. I-verify:
-   - ✅ Log na *"LIVE mode ready — market: Bitcoin Up or Down..."*
-   - ✅ Magiging **"Account Balance (LIVE)"** ang balance card na nagpapakita
-     ng totoong USDC mo
-   - ✅ `[LIVE]` tag sa bottom bar
-4. Kung pumalya ang koneksyon, **awtomatikong babalik sa PAPER mode**
-   (may log na "Live setup failed ... falling back to PAPER mode") —
-   hindi ito magba-buy nang hindi mo alam
+1. Settings → **Live**, paste the Polymarket **Private Key** and **Funder Address**, pick the **Sign-up Method**, set **Risk to 5–10 USDC** for the first run → Save
+2. The inline check should report the credentials as valid along with your USDC balance
+3. **START BOT** → expect `LIVE mode ready — market: Bitcoin Up or Down on <date>` and your real balance on the dashboard
+4. If anything fails, the bot automatically falls back to Paper mode with a red alert — it will never spend money silently
+5. After the first live trade, cross-check the order and PnL against polymarket.com → Portfolio
 
 ---
 
-## Checklist ng Buong Test (quick reference)
+## Building the Executable (PyInstaller)
 
-```
-[ ] STEP 1: pytest — 57/57 passed
-[ ] STEP 2: smoke tests — lahat [OK]
-[ ] STEP 3: app opens; 3 status cards Connected; dating trades/logs visible
-[ ] STEP 4: settings save + persist; secrets masked; 200 USDC risk default
-[ ] STEP 5: START/STOP; price + chart gumagalaw; strategy status nag-a-update
-[ ] STEP 6: (optional) forced paper trade — buy, sell, PnL, stats OK
-[ ] STEP 7: (optional) live mode connect + totoong balance
-```
-
----
-
-## Bagong Features (2026-07-11)
-
-- **Position resume** — kapag na-restart ang app habang may open position,
-  awtomatiko itong nire-restore sa pag-START (kung same UTC day at same mode).
-  Kapag stale na (ibang araw), dini-discard na may WARN log. Kapag may naiwang
-  LIVE position pero Paper mode ka na, may malakas na ERROR alert.
-- **Error alert banner** — pulang banner sa taas ng window tuwing may ERROR
-  (failed BUY/SELL order, live setup failure). Dismissible via ✕.
-- **Single .exe packaging** — tingnan sa baba.
-
-## Pag-package (PyInstaller)
-
-### Recommended: folder build (onedir) — MABILIS magbukas (~2s)
-
-**Gamitin ang `venv313` (Python 3.13) sa pag-build** — ang lumang venv ay
-Python 3.10.0 na may CPython bug (bpo-45757) na nagpapa-crash sa PyInstaller
-kapag siniscan ang pandas/Pillow:
+**Build with the Python 3.13 venv (`venv313`)** — the 3.10.0 dev venv has a CPython bug (bpo-45757) that crashes PyInstaller's scanner on pandas/Pillow:
 
 ```powershell
 .\venv313\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PyQt6 --collect-submodules finplot src\main.py
 ```
 
-> `--collect-submodules finplot` ay KAILANGAN — ang finplot ay may dynamic
-> import (`finplot.pdplot` pandas backend) na hindi nakikita ng PyInstaller;
-> kapag kulang, nagka-crash ang Candles view sa exe.
-
-Kung wala pa ang `venv313`:
+First-time setup of the build venv:
 ```powershell
 & "C:\Program Files\Python313\python.exe" -m venv venv313
 .\venv313\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
 .\venv313\Scripts\python.exe -m pip uninstall -y PyQt6 PyQt6-Qt6 PyQt6_sip
 ```
 
-- Output: **`dist\PolyTradePro\`** folder (~177 MB) — i-zip ang BUONG folder
-  para i-distribute; ang user ay magpapatakbo ng `PolyTradePro.exe` sa loob.
-- Gagawa ito ng sariling `data\` folder (database + logs) sa loob ng
-  app folder. Ang secrets ay nasa Windows Credential Manager — hindi kasama.
+Output: **`dist/PolyTradePro/`** (~200 MB). Delete `dist/PolyTradePro/data` (test artifacts) before zipping the folder for distribution. The app creates its own `data/` (database + logs) next to the exe on first run.
 
-### Alternative: single .exe (onefile) — HUWAG gamitin kung ayaw ng mabagal
+### Build gotchas (all required)
+- **`--collect-submodules finplot`** — finplot registers a pandas plotting backend (`finplot.pdplot`) via a dynamic import that PyInstaller cannot see; without this flag the Candles view crashes in the packaged app
+- **PyQt6 conflict** — installing finplot pulls in PyQt6; uninstall it from the build venv and keep `--exclude-module PyQt6` (PyInstaller refuses two Qt bindings, and QtAwesome may bind to the wrong one at runtime)
+- **Do not build with the Python 3.10.0 venv** — CPython bug bpo-45757 causes an `IndexError` in PyInstaller's module scanner
+- **Explorer shows a stale icon after a rebuild?** That's the Windows icon cache — run `ie4uinit.exe -show`, rename the exe, or restart Explorer
 
-```powershell
-.\venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PIL src\main.py
-```
-
-- Isang file lang (~72 MB) PERO **10–60 segundo bago magbukas** kada launch
-  (self-extraction + antivirus scan) — kaya hindi ito ang recommended.
-
-### Mga paalala sa build
-
-- **⚠️ PyQt6 conflict**: ang pag-install ng finplot ay nagdadala ng PyQt6 —
-  i-uninstall ito sa build venv (`pip uninstall PyQt6 PyQt6-Qt6 PyQt6_sip`)
-  at panatilihin ang `--exclude-module PyQt6`; hindi sinusuportahan ng
-  PyInstaller ang dalawang Qt bindings, at nagba-bind pa ang qtawesome sa
-  maling Qt kapag naiwan ito.
-- **⚠️ HUWAG mag-build gamit ang lumang venv (Python 3.10.0)** — may CPython
-  bug (bpo-45757) na nagpapa-IndexError sa PyInstaller scanner kapag
-  siniscan ang pandas/Pillow.
-- **Icon sa Explorer mukhang luma/walang icon pagkatapos ng rebuild?**
-  Icon cache lang iyon ng Windows — patakbuhin ang `ie4uinit.exe -show`,
-  o i-rename ang exe, o i-restart ang Explorer.
+---
 
 ## Troubleshooting
 
-| Problema | Solusyon |
+| Problem | Solution |
 |---|---|
-| **Polymarket card = Disconnected** | Ang ilang ISP (hal. PLDT/Converge) ay bina-block ang polymarket.com via DNS poisoning. May built-in DoH resolver ang app (`src/core/netdns.py`) na dapat mag-bypass dito. Patakbuhin ang `.\venv\Scripts\python.exe -m tests.check_polymarket` para makita kung alin ang reachable. |
-| **Hindi bumubukas ang app** | Patakbuhin sa terminal para makita ang error: `.\venv\Scripts\python.exe -m src.main` |
-| **May error habang tumatakbo** | Tingnan ang **`data\app.log`** — lahat ng errors ay naka-log doon (pwedeng i-attach bilang error report) |
-| **Walang trade kahit RUNNING** | Normal — basahin ang strategy status sa ilalim ng chart; sasabihin nito kung bakit naghihintay (entry window, stretch, share price, o na-block ng death trap filter) |
-| **"BLOCKED — volume escalating..."** | Death trap guard ito, sinasadya — hindi papasok ang bot sa momentum days |
+| Polymarket card shows Disconnected | Some ISPs DNS-poison `*.polymarket.com`. The app ships a built-in DoH resolver (`src/core/netdns.py`) that bypasses this. Run `tests.check_polymarket` to inspect reachability |
+| App won't open | Run from a terminal to see the error: `.\venv\Scripts\python.exe -m src.main` |
+| Runtime errors | Check **`data\app.log`** — every error is logged there with a full traceback (attach it when reporting issues) |
+| Bot is RUNNING but never trades | Read the strategy status line under the chart — it states exactly what it's waiting for (entry window, stretch, share price, or an active death-trap veto) |
+| `BLOCKED — volume escalating…` | Intentional: the volume death-trap guard is refusing momentum days |
+| Balance shows `…` in Live mode | Transient network hiccup; the balance loop retries every 10s and refreshes every 60s |
 
 ---
 
@@ -245,14 +192,21 @@ Kung wala pa ang `venv313`:
 
 ```
 src/
-  main.py            # Entry point
-  core/              # Engine, connection monitor, secrets, DoH resolver, logging
-  feed/              # Binance WebSocket feed (read-only), Coinbase (premium filter)
-  strategy/          # Mean reversion logic + death trap filters (pure, walang I/O)
-  execution/         # PaperExecutor (simulated) at LiveExecutor (Polymarket CLOB)
-  storage/           # SQLite (trades, logs, settings)
-  ui/                # PySide6 UI (dashboard, settings, trades, logs, stats)
-tests/               # Unit tests + smoke tests
-data/                # SQLite DB + app.log (auto-created)
-run.bat              # Double-click launcher
+  main.py            # Entry point (Qt + asyncio via qasync, DoH install)
+  core/              # Bot engine, connection monitor, secrets, DoH resolver, paths, logging
+  feed/              # Binance WebSocket/REST feed, Coinbase feed (premium filter)
+  strategy/          # Mean reversion rules + death-trap filters (pure, fully unit-tested)
+  execution/         # PaperExecutor (simulated), LiveExecutor (Polymarket CLOB), position resume
+  storage/           # SQLite (trades, logs, settings, open position)
+  ui/                # PySide6 UI: dashboard, charts, settings, trades, logs, stats, theme
+tests/               # 61 unit tests + smoke tests + verification utilities
+assets/              # UI icon assets (spinbox +/−, dropdown chevron)
+data/                # SQLite DB + app.log (auto-created, gitignored)
+run.bat              # Dev launcher
 ```
+
+---
+
+## Disclaimer
+
+This software places real-money trades on Polymarket when Live mode is enabled. Use Paper mode until you have validated the strategy yourself. Trading involves risk of loss; nothing here is financial advice. Verifying that Polymarket is legal in your jurisdiction is your responsibility.
