@@ -52,6 +52,12 @@ QListWidget#sidebar::item {{
     margin: 2px 8px;
     color: {MUTED};
 }}
+/* Collapsed (icon-only): mas maliit na padding para kasya at nakagitna
+   ang icons sa makitid na sidebar */
+QListWidget#sidebar[collapsed="true"]::item {{
+    padding: 10px 6px;
+    margin: 2px 4px;
+}}
 QListWidget#sidebar::item:hover {{ background: {CARD}; }}
 QListWidget#sidebar::item:selected {{
     background: {ACCENT_DIM};

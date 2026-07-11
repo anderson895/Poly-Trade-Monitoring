@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStackedWidget,
     QTableWidget,
+    QToolButton,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -236,38 +237,65 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 700)
         self.setStyleSheet(theme.STYLESHEET)
 
-        # ---- Sidebar ----------------------------------------------------
-        brand_icon = QLabel()
-        brand_icon.setPixmap(qta.icon("fa6s.cube", color=theme.ACCENT).pixmap(28, 28))
-        brand = QLabel("PolyTrade Pro")
-        brand.setProperty("h2", True)
+        # ---- Sidebar (collapsible) ---------------------------------------
+        self._brand_icon = QLabel()
+        self._brand_icon.setPixmap(
+            qta.icon("fa6s.cube", color=theme.ACCENT).pixmap(28, 28)
+        )
+        self._brand = QLabel("PolyTrade Pro")
+        self._brand.setProperty("h2", True)
+
+        self._sidebar_btn = QToolButton()
+        self._sidebar_btn.setIcon(qta.icon("fa6s.bars", color=theme.MUTED))
+        self._sidebar_btn.setIconSize(QSize(18, 18))
+        self._sidebar_btn.setToolTip("Toggle sidebar")
+        self._sidebar_btn.clicked.connect(self._toggle_sidebar)
+
         brand_row = QHBoxLayout()
         brand_row.setSpacing(8)
-        brand_row.addWidget(brand_icon)
-        brand_row.addWidget(brand, stretch=1)
+        brand_row.addWidget(self._brand_icon)
+        brand_row.addWidget(self._brand, stretch=1)
+        brand_row.addWidget(self._sidebar_btn)
 
-        brand_sub = QLabel("Polymarket Trading Bot")
-        brand_sub.setProperty("muted", True)
+        self._brand_sub = QLabel("Polymarket Trading Bot")
+        self._brand_sub.setProperty("muted", True)
 
         self._nav = QListWidget()
         self._nav.setObjectName("sidebar")
         self._nav.setIconSize(QSize(18, 18))
+        # Walang horizontal scrollbar kailanman — ito ang gumugulo sa
+        # collapsed mode (nag-i-scroll at nagki-clip ang icons)
+        self._nav.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         for icon_name, label in self.PAGES:
             icon = qta.icon(icon_name, color=theme.MUTED, color_selected="#c7d2fe")
-            self._nav.addItem(QListWidgetItem(icon, label))
+            item = QListWidgetItem(icon, label)
+            item.setToolTip(label)  # kapaki-pakinabang kapag collapsed
+            self._nav.addItem(item)
         self._nav.setCurrentRow(0)
         self._nav.setFixedWidth(190)
 
-        version = QLabel(f"v{APP_VERSION}")
-        version.setProperty("muted", True)
+        self._version = QLabel(f"v{APP_VERSION}")
+        self._version.setProperty("muted", True)
 
-        side_col = QVBoxLayout()
+        # Naka-QWidget container ang sidebar para deterministic ang lapad —
+        # kapag nag-collapse, lumiliit ito at ang BODY ang nagse-stretch
+        self._sidebar = QWidget()
+        side_col = QVBoxLayout(self._sidebar)
         side_col.setContentsMargins(14, 14, 0, 14)
         side_col.addLayout(brand_row)
-        side_col.addWidget(brand_sub)
+        side_col.addWidget(self._brand_sub)
         side_col.addSpacing(14)
         side_col.addWidget(self._nav, stretch=1)
-        side_col.addWidget(version)
+        side_col.addWidget(self._version)
+        self._sidebar.setFixedWidth(204)
+
+        # I-restore ang huling sidebar state (collapsed/expanded)
+        self._sidebar_collapsed = False
+        if str(db.get_setting("sidebar_collapsed", "0")) == "1":
+            self._sidebar_collapsed = True
+            self._apply_sidebar(True)
 
         # ---- Pages -------------------------------------------------------
         self.dash = DashboardPage(db)
@@ -298,7 +326,7 @@ class MainWindow(QMainWindow):
 
         root = QHBoxLayout()
         root.setContentsMargins(0, 0, 0, 0)
-        root.addLayout(side_col)
+        root.addWidget(self._sidebar)
         root.addLayout(content, stretch=1)
 
         container = QWidget()
@@ -331,6 +359,33 @@ class MainWindow(QMainWindow):
         engine.logAdded.connect(self.dash.add_log)
         engine.logAdded.connect(self.logs.add_log)
         engine.logAdded.connect(self._on_log_alert)
+
+    # ---------------------------------------------------------------- sidebar
+
+    def _toggle_sidebar(self) -> None:
+        self._sidebar_collapsed = not self._sidebar_collapsed
+        self._apply_sidebar(self._sidebar_collapsed)
+        self._db.set_setting(
+            "sidebar_collapsed", "1" if self._sidebar_collapsed else "0"
+        )
+
+    def _apply_sidebar(self, collapsed: bool) -> None:
+        """Collapsed = icon-only (may tooltips); expanded = buo.
+
+        Ang buong sidebar container ang nagbabago ng lapad — kaya ang
+        body/content ang awtomatikong nagse-stretch sa natirang espasyo.
+        """
+        for widget in (self._brand_icon, self._brand, self._brand_sub,
+                       self._version):
+            widget.setVisible(not collapsed)
+        for i, (_icon, label) in enumerate(self.PAGES):
+            self._nav.item(i).setText("" if collapsed else label)
+        self._nav.setFixedWidth(48 if collapsed else 190)
+        self._sidebar.setFixedWidth(62 if collapsed else 204)
+        # I-apply ang collapsed QSS variant (mas maliit na item padding)
+        self._nav.setProperty("collapsed", collapsed)
+        self._nav.style().unpolish(self._nav)
+        self._nav.style().polish(self._nav)
 
     # ------------------------------------------------------------------ slots
 
