@@ -104,23 +104,33 @@ I-verify ang mga sumusunod pagbukas:
 > Karaniwang **walang trade sa isang araw** kung walang malaking galaw ang BTC
 > — normal ito, hindi bug.
 
-### STEP 6 (Optional): Pilitin ang Isang Paper Trade para Makita ang Buong Cycle
+### STEP 6 (Optional): I-test ang Buy/Sell Logic ng Bot (Paper)
 
-Kung gusto mong makita agad ang buy→sell cycle nang hindi naghihintay ng
-totoong 1.5% stretch:
+**Paraan A — Automated E2E test (anumang oras, ~2 segundo):**
 
-1. Sa **Settings**, ibaba ang **Entry Stretch Band** sa `0.10 %`
-   at itaas ang **Max Stretch** sa `5.00 %` → Save
-2. START BOT sa loob ng **4:00–12:00 UTC** (12:00 PM – 8:00 PM Philippine time)
-3. Kapag pumasok ang trade, makikita mo:
-   - Log na `[PAPER] BUY ... UP/DOWN @ 0.xx ($200.00)`
-   - Strategy status: `IN POSITION: ...`
-   - Bagong row sa **Trades** page
-4. Kapag nag-exit (profit target / stop loss / EOD):
-   - Log na `[PAPER] SELL ... PnL +x.xx USDC`
-   - Ma-a-update ang **Statistics** page at **Paper Balance**
-5. **⚠️ IBALIK ang settings pagkatapos:** click **Reset** → **Save Settings**
-   (ibabalik nito ang lahat sa defaults, kasama ang Risk = 200 USDC)
+```powershell
+.\venv\Scripts\python.exe -m pytest tests\test_paper_e2e.py -v
+```
+
+Sine-simulate nito ang buong mean-reversion na araw sa TOTOONG engine code:
+- BTC pumped +2.0% sa loob ng entry window → **bibili** ng DOWN sa ~20¢ ($200)
+- Bumalik ang presyo (reversion) → +105% ang share → **magbebenta** (profit)
+- Kasama rin: stop-loss cycle, 1-trade-per-day limit, at DB recording
+
+**Expected:** 3 passed. Kung pasado ito, gumagana ang buy→sell logic.
+
+**Paraan B — Totoong paper validation (hintayin ang tamang araw):**
+
+Iwanan lang ang bot na naka-START sa Paper mode. Sa araw na ang BTC ay
+gumalaw ng **~1.7%–2.3%** mula sa daily open sa loob ng **12:00 PM–8:00 PM
+PH time**, kusang bibili ang bot — makikita mo sa Trades page, logs, at
+Statistics. Ito ang tunay na validation ng strategy bago mag-live.
+
+> **Bakit hindi puwedeng "pilitin" via Settings:** may share-price gate ang
+> strategy (15¢–25¢ ang OTM share) na nakatali sa laki ng stretch — kaya
+> kahit ibaba mo ang Entry Stretch Band, hindi papasok ang bot hangga't
+> walang tunay na ~1.7%+ na galaw. Sadya ito (disiplina ng strategy);
+> gamitin ang Paraan A para sa mabilis na logic check.
 
 ### STEP 7 (Optional, TOTOONG PERA): I-test ang LIVE Mode
 
