@@ -137,7 +137,7 @@ def evaluate_entry(
         return Signal(Action.NONE, reason="waiting for data")
 
     if trades_today >= cfg.max_trades_per_day:
-        return Signal(Action.NONE, reason="max trades for the day reached")
+        return Signal(Action.NONE, reason="max trades for this period reached")
 
     hrs = hours_into_period(now_utc, cfg.period_hours)
     if hrs < cfg.entry_start_hour:

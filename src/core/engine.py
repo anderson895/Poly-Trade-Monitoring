@@ -82,8 +82,8 @@ class BotEngine(QObject):
         self.state = BotState.STOPPED
         self.config = config or StrategyConfig()
         self.executor = PaperExecutor(db)
-        self._trades_today = 0
-        self._trades_day: dt.date | None = None
+        self._trades_today = 0  # trades sa KASALUKUYANG market period
+        self._trades_period: float | None = None  # aligned period start
         # One-time WARN flags para hindi mag-spam ang log kada tick
         self._volume_veto_logged = False
         self._premium_veto_logged = False
@@ -501,6 +501,14 @@ class BotEngine(QObject):
                 )
 
     def _reset_daily_counter(self, now: dt.datetime) -> None:
-        if self._trades_day != now.date():
-            self._trades_day = now.date()
+        """I-reset ang trade counter KADA MARKET PERIOD (hindi kada araw).
+
+        Sa daily timeframe, pareho lang ito ng dating per-day reset; sa
+        15m/1h/4h, bawat bagong period ay bagong market — may panibagong
+        1-trade allowance (kung hindi, titigil ang bot buong araw
+        pagkatapos ng unang trade sa 15m mode).
+        """
+        period = self._aligned_period_start()
+        if self._trades_period != period:
+            self._trades_period = period
             self._trades_today = 0
