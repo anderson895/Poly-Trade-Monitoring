@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 import qtawesome as qta
 from PySide6.QtCore import Signal
@@ -203,12 +204,22 @@ class DashboardPage(QWidget):
 
     def _on_chart_type(self, index: int) -> None:
         if index == 1 and self._candle_chart is None:
-            # Lazy load — dito lang bumibigat (finplot + pandas import)
-            from src.ui.candle_chart import CandleChart
-            self._candle_chart = CandleChart()
-            if self._history:
-                self._candle_chart.load_history(self._history)
-            self._chart_stack.addWidget(self._candle_chart)
+            try:
+                # Lazy load — dito lang bumibigat (finplot + pandas import)
+                from src.ui.candle_chart import CandleChart
+                self._candle_chart = CandleChart()
+                if self._history:
+                    self._candle_chart.load_history(self._history)
+                self._chart_stack.addWidget(self._candle_chart)
+            except Exception:
+                # Huwag i-crash nang paulit-ulit — bumalik sa Line at
+                # i-log para masuri (hal. kulang na module sa packaging)
+                logging.getLogger("polytrade.ui").exception(
+                    "Candlestick chart failed to load:"
+                )
+                self._candle_chart = None
+                self._type_combo.setCurrentIndex(0)
+                return
         self._chart_stack.setCurrentIndex(index)
         # Ang Time filter ay para sa Line chart lang
         self._window_combo.setVisible(index == 0)

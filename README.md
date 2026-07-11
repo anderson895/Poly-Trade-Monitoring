@@ -187,8 +187,12 @@ Python 3.10.0 na may CPython bug (bpo-45757) na nagpapa-crash sa PyInstaller
 kapag siniscan ang pandas/Pillow:
 
 ```powershell
-.\venv313\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PyQt6 src\main.py
+.\venv313\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PyQt6 --collect-submodules finplot src\main.py
 ```
+
+> `--collect-submodules finplot` ay KAILANGAN — ang finplot ay may dynamic
+> import (`finplot.pdplot` pandas backend) na hindi nakikita ng PyInstaller;
+> kapag kulang, nagka-crash ang Candles view sa exe.
 
 Kung wala pa ang `venv313`:
 ```powershell
