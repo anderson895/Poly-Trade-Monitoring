@@ -8,10 +8,12 @@ Mga elemento:
 """
 from __future__ import annotations
 
+import bisect
 import time
 from collections import deque
 
 import pyqtgraph as pg
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from src.ui import theme
@@ -54,6 +56,26 @@ class PriceChart(pg.PlotWidget):
         )
         self._price_marker.hide()
         self.addItem(self._price_marker, ignoreBounds=True)
+
+        # Hover crosshair — ipinapakita ang eksaktong presyo/oras ng
+        # pinakamalapit na data point (Binance-style)
+        cross_pen = pg.mkPen("#6b7280", width=1, style=Qt.PenStyle.DashLine)
+        self._cross_v = pg.InfiniteLine(angle=90, pen=cross_pen)
+        self._cross_h = pg.InfiniteLine(angle=0, pen=cross_pen)
+        self._hover_dot = pg.ScatterPlotItem(
+            size=8, brush=pg.mkBrush(theme.BTC_BLUE),
+            pen=pg.mkPen("#ffffff", width=1),
+        )
+        self._hover_label = pg.TextItem(
+            color=theme.TEXT, fill=pg.mkBrush("#1f2937"),
+            border=pg.mkPen(theme.BORDER), anchor=(0, 1),
+        )
+        for item in (self._cross_v, self._cross_h, self._hover_dot,
+                     self._hover_label):
+            item.hide()
+            item.setZValue(100)
+            self.addItem(item, ignoreBounds=True)
+        self.scene().sigMouseMoved.connect(self._on_mouse_moved)
 
         # Y auto-range batay sa NAKIKITANG data lang (visible x window)
         self.getViewBox().setAutoVisible(y=True)
@@ -129,6 +151,56 @@ class PriceChart(pg.PlotWidget):
         if visible:
             span = max(visible) - min(visible)
             self._curve.setFillLevel(min(visible) - max(span * 0.02, 2))
+
+    def _hide_hover(self) -> None:
+        for item in (self._cross_v, self._cross_h, self._hover_dot,
+                     self._hover_label):
+            item.hide()
+
+    def leaveEvent(self, ev) -> None:  # noqa: N802 (Qt naming)
+        self._hide_hover()
+        super().leaveEvent(ev)
+
+    def _on_mouse_moved(self, scene_pos) -> None:
+        """Hover: i-snap ang crosshair sa pinakamalapit na data point at
+        ipakita ang eksaktong presyo + oras nito."""
+        if not self._times:
+            return
+        vb = self.getViewBox()
+        if not vb.sceneBoundingRect().contains(scene_pos):
+            self._hide_hover()
+            return
+        view_pos = vb.mapSceneToView(scene_pos)
+
+        # Pinakamalapit na data point sa x (binary search — mabilis)
+        times = self._times
+        i = bisect.bisect_left(list(times), view_pos.x())
+        candidates = [j for j in (i - 1, i) if 0 <= j < len(times)]
+        if not candidates:
+            self._hide_hover()
+            return
+        j = min(candidates, key=lambda k: abs(times[k] - view_pos.x()))
+        t, price = times[j], self._prices[j]
+
+        self._cross_v.setPos(t)
+        self._cross_h.setPos(price)
+        self._hover_dot.setData([t], [price])
+
+        # Oras: may petsa kapag mahaba ang window (1D pataas)
+        long_range = self._window_secs is None or self._window_secs > 86400
+        fmt = "%b %d  %H:%M" if long_range else "%H:%M:%S"
+        self._hover_label.setText(
+            f" {time.strftime(fmt, time.localtime(t))} \n ${price:,.2f} "
+        )
+        # Ilagay ang label sa tabi ng point; iwas-labas sa kanang gilid
+        (xlo, xhi), (ylo, yhi) = vb.viewRange()
+        anchor_x = 1 if t > xlo + (xhi - xlo) * 0.8 else 0
+        self._hover_label.setAnchor((anchor_x, 1))
+        self._hover_label.setPos(t, price)
+
+        for item in (self._cross_v, self._cross_h, self._hover_dot,
+                     self._hover_label):
+            item.show()
 
     def clear_data(self) -> None:
         self._times.clear()
