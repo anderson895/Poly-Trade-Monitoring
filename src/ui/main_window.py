@@ -365,13 +365,29 @@ class MainWindow(QMainWindow):
         engine.logAdded.connect(self._on_log_alert)
 
     def _apply_pointer_cursors(self, container: QWidget) -> None:
-        """Hand cursor sa bawat button, dropdown, checkbox, at nav item."""
-        from PySide6.QtWidgets import QCheckBox, QComboBox
+        """Hand cursor sa bawat button, dropdown, checkbox, at nav item.
+        Hinaharangan din ang mouse-wheel sa spinboxes/dropdowns para
+        walang aksidenteng pagbabago ng values habang nag-i-scroll."""
+        from PySide6.QtWidgets import (
+            QCheckBox,
+            QComboBox,
+            QDoubleSpinBox,
+            QSpinBox,
+        )
+
+        from src.ui.widgets import WheelBlocker
 
         for cls in (QPushButton, QToolButton, QComboBox, QCheckBox):
             for widget in container.findChildren(cls):
                 widget.setCursor(Qt.CursorShape.PointingHandCursor)
         self._nav.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self._wheel_blocker = WheelBlocker(self)
+        for cls in (QDoubleSpinBox, QSpinBox, QComboBox):
+            for widget in container.findChildren(cls):
+                widget.installEventFilter(self._wheel_blocker)
+                # StrongFocus: hindi rin makukuha ng wheel ang focus
+                widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     # ---------------------------------------------------------------- sidebar
 

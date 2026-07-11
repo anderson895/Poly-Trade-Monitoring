@@ -2,9 +2,25 @@
 from __future__ import annotations
 
 import qtawesome as qta
+from PySide6.QtCore import QEvent, QObject
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from src.ui import theme
+
+
+class WheelBlocker(QObject):
+    """Hinaharangan ang mouse-wheel sa spinboxes/dropdowns.
+
+    Kapag nag-i-scroll ang user sa page at nadaanan ng cursor ang isang
+    input, nababago ang value nang hindi napapansin — delikado ito sa
+    mga setting tulad ng Risk USDC o Trading Mode. Type, click, at ang
+    +/− buttons pa rin ang paraan ng pagpalit.
+    """
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 (Qt naming)
+        if event.type() == QEvent.Type.Wheel:
+            return True  # i-block — huwag baguhin ang value
+        return super().eventFilter(obj, event)
 
 
 class Card(QFrame):
