@@ -137,21 +137,28 @@ class DashboardPage(QWidget):
         logs_head.addStretch()
         logs_head.addWidget(clear_btn)
 
+        # Buong-taas na column ang logs (katabi ng chart sa kanan) —
+        # mas maraming log entries ang kita kaysa sa dating 150px strip
         self._log_list = QListWidget()
-        self._log_list.setMaximumHeight(150)
+        self._log_list.setWordWrap(True)
 
         logs_panel = Card()
+        logs_panel.setFixedWidth(340)
         logs_col = QVBoxLayout(logs_panel)
         logs_col.setContentsMargins(14, 12, 14, 12)
         logs_col.addLayout(logs_head)
-        logs_col.addWidget(self._log_list)
+        logs_col.addWidget(self._log_list, stretch=1)
 
         # ---- Layout --------------------------------------------------------
+        body_row = QHBoxLayout()
+        body_row.setSpacing(10)
+        body_row.addWidget(chart_panel, stretch=1)
+        body_row.addWidget(logs_panel)
+
         root = QVBoxLayout(self)
         root.setSpacing(10)
         root.addLayout(cards_row)
-        root.addWidget(chart_panel, stretch=1)
-        root.addWidget(logs_panel)
+        root.addLayout(body_row, stretch=1)
 
         self._load_recent_logs()
         self.refresh_balance()
