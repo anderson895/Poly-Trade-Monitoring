@@ -10,7 +10,7 @@
 |---|---|
 | **App Type** | Desktop application (Windows-first) |
 | **Purpose** | Automated trading sa Polymarket daily BTC Up/Down contracts |
-| **Strategy** | Mean Reversion — bumibili ng murang out-of-the-money shares (15¢–25¢) kapag na-stretch ang BTC price nang 1.5%–2.5% mula sa Daily Open (00:00 UTC), tapos nagbebenta kapag nag-revert ang presyo pabalik sa open |
+| **Strategy** | Mean Reversion — bumibili ng murang out-of-the-money shares (15¢–25¢) kapag na-stretch ang BTC price nang 1.5%–2.5% mula sa period strike, tapos nagbebenta kapag nag-revert ang presyo pabalik sa strike. **⚠️ Ang daily market ay TANGHALI ET → TANGHALI ET** (strike = Binance 1m close sa nakaraang 12:00 PM ET), hindi 00:00 UTC — natuklasan at itinama 2026-07-12 |
 | **Data Source** | Binance API — **read-only** (BTC price/candles lang) |
 | **Trading Venue** | Polymarket CLOB (Central Limit Order Book) |
 | **Wallet/Funds** | USDC sa Polygon network |
@@ -88,7 +88,7 @@ Ito ang pinaka-praktikal para sa project na ito. Bakit:
 
 | Module | Responsibility |
 |---|---|
-| `feed/binance.py` | WebSocket connection sa Binance, BTC price stream, daily open tracking (00:00 UTC), reconnect logic |
+| `feed/binance.py` | WebSocket connection sa Binance, BTC price stream, period open/strike tracking (daily = 1m close sa tanghali ET; 15m/1h/4h = UTC-aligned candle open), reconnect logic |
 | `strategy/mean_reversion.py` | Entry/exit rules (see §4), pure logic — walang I/O para madaling i-test |
 | `execution/polymarket.py` | Market discovery (daily BTC Up/Down), order placement/cancel, position tracking via `py-clob-client` |
 | `core/engine.py` | Orchestrator — pinagdudugtong ang feed → strategy → execution; START/STOP state machine |
@@ -125,7 +125,7 @@ price tick → stretch = (price − period_open) / period_open × 100
 | 2 | May sapat na data (period open + share price) | — | `evaluate_entry` |
 | 3 | **Hindi Economic Data Day** (manual toggle sa Settings, auto-expire kinabukasan) | naka-off | `engine._evaluate_strategy` |
 | 4 | **Wala pang trade sa kasalukuyang market period** (1 trade kada period; nagre-reset bawat bagong period) | max 1 | `engine._reset_daily_counter` |
-| 5 | **Nasa entry window**: lumipas na ang 16.7% ng period pero hindi pa 50% | 4h–12h mula 00:00 UTC | `evaluate_entry` |
+| 5 | **Nasa entry window**: lumipas na ang 16.7% ng period pero hindi pa 50% | 4h–12h mula TANGHALI ET (ang daily period anchor) | `evaluate_entry` |
 | 6 | **Stretch sa loob ng band**: \|stretch\| ≥ minimum AT ≤ maximum (lampas sa max = momentum day / death trap → SKIP) | 1.5%–2.5% | `evaluate_entry` |
 | 7 | **OTM share price sa 15¢–25¢** — Paper: estimated mula sa stretch (`0.50 − 0.15×\|stretch\|/scale`); Live: totoong **best ASK** ng target side mula sa CLOB order book (refresh kada 5s) | 0.15–0.25 | `evaluate_entry` |
 | 8 | **Volume HINDI escalating**: recent 3h avg volume < 2.0× ng prior 20h baseline (institutional momentum veto) | 2.0× | `filters.is_volume_escalating` |
@@ -156,10 +156,18 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 
 | Timeframe | Entry window | Stretch band | Force exit | Bagong market kada |
 |---|---|---|---|---|
-| **Daily** | 4h–12h | 1.50%–2.50% | 23.5h | araw (00:00 UTC) |
-| **4 Hours** | 40–120 min | 0.61%–1.02% | 235 min | 4 oras |
-| **1 Hour** | 10–30 min | 0.31%–0.51% | 58.8 min | oras |
-| **15 Minutes** | 2.5–7.5 min | 0.15%–0.26% | 14.7 min | 15 min (:00/:15/:30/:45) |
+| **Daily** | 4h–12h | 1.50%–2.50% | 23.5h | araw (**TANGHALI ET**, DST-aware) |
+| **4 Hours** | 40–120 min | 0.61%–1.02% | 235 min | 4 oras (UTC-aligned) |
+| **1 Hour** | 10–30 min | 0.31%–0.51% | 58.8 min | oras (UTC-aligned) |
+| **15 Minutes** | 2.5–7.5 min | 0.15%–0.26% | 14.7 min | 15 min (:00/:15/:30/:45 UTC) |
+
+> **⚠️ Daily anchor correction (2026-07-12):** Ang Polymarket daily market
+> ay tanghali-ET → tanghali-ET at naka-pangalan sa araw ng settlement
+> (lampas 12PM ET = bukas na petsa ang aktibong market). Ang strike ay
+> ang Binance 1m CLOSE sa nakaraang 12:00 PM ET. Naka-implement sa
+> `period_start_utc()` (mean_reversion.py) + `anchor_offset_secs` sa
+> StrategyConfig; ang feed, slug builder, resume, at trade counter ay
+> period-anchored na lahat.
 
 - Profit target, stop loss, at 15¢–25¢ share gate: HINDI nagbabago
   (magkapareho ang share-price dynamics ng lahat ng markets)
@@ -174,7 +182,7 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 
 ### Phase 1 — Foundation ✅ DONE (2026-07-11)
 - [x] Project scaffold: Python venv, PySide6, project structure
-- [x] Binance WebSocket feed: real-time BTC price + daily open (00:00 UTC) tracking
+- [x] Binance WebSocket feed: real-time BTC price + period open tracking *(orihinal na 00:00 UTC; itinama sa tanghali ET 2026-07-12 — tingnan ang §4)*
 - [x] Connection status indicators (Internet / Binance / Polymarket)
 - [x] Settings UI: API Key, Private Key, Risk USDC — stored via `keyring`
 - [x] SQLite schema: trades, logs, settings
@@ -203,7 +211,7 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 - [ ] **HINDI PA NA-VE-VERIFY ang order placement na may totoong pera** — mag-test gamit ang napakaliit na USDC (~$5–10). *Kailangan ng user ang Private Key + Funder Address + USDC. Tingnan ang step.txt (end-user guide).*
 
 ### Phase 4 — Hardening & Packaging (Week 4–5)
-- [x] ~~Reconnect/resume logic~~ ✅ DONE (2026-07-11) — WebSocket auto-reconnect (dati na); **position resume sa app restart**: naka-persist ang open position sa SQLite, nire-restore sa START kung same UTC day + same mode; stale (ibang araw) = discarded na may WARN; naiwang LIVE position habang PAPER mode = malakas na ERROR alert; 8 unit tests (`tests/test_resume.py`)
+- [x] ~~Reconnect/resume logic~~ ✅ DONE (2026-07-11, updated 2026-07-12) — WebSocket auto-reconnect (dati na); **position resume sa app restart**: naka-persist ang open position sa SQLite, nire-restore sa START kung same MARKET PERIOD + same mode (period-based sa lahat ng timeframes; ang daily ay tanghali-ET anchored); stale (lumang period) = discarded na may WARN; naiwang LIVE position habang PAPER mode = malakas na ERROR alert (`tests/test_resume.py`)
 - [x] ~~Death-trap filter: volume escalation detection~~ ✅ DONE (2026-07-11) — hourly Binance volumes, recent 3h avg vs prior 20h baseline, blocks entry kapag ≥2× (configurable sa Settings); 7 unit tests
 - [x] ~~Death-trap filter: economic calendar toggle~~ ✅ DONE (2026-07-11) — manual checkbox sa Settings, naka-store ang petsa kaya auto-expire kinabukasan
 - [x] ~~Death-trap filter: Coinbase premium check~~ ✅ DONE (2026-07-11) — Coinbase spot vs Binance kada 60s, direction-aware veto sa ±0.15% (configurable); fail-open kung walang Coinbase data
@@ -230,7 +238,16 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
       proceeds + PnL pagka-SELL
 - [x] Mode-aware Settings form; Reset = strategy values lang
 - [x] Live balance refresh loop (60s / 10s retry)
-- [x] E2E paper buy→sell simulation test; **74 unit tests total**
+- [x] E2E paper buy→sell simulation test; **82 unit tests total**
+
+**Post-release fixes (2026-07-12):**
+- [x] **Daily market anchor correction** — tanghali-ET period + strike +
+      slug settlement date (dati'y maling 00:00 UTC assumption; nag-"No
+      market found" ang daily LIVE pagkalampas ng tanghali ET)
+- [x] `pytz` → stdlib `zoneinfo` + `tzdata` (wala palang pytz sa build venv)
+- [x] "Watching:" strategy-reason logging sa Recent Logs (deduped, hindi
+      nag-i-spam) — kita na kung BAKIT hindi pumapasok ang bot
+- [x] Save Settings button = accent color (primary action)
 
 ---
 
@@ -252,7 +269,7 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 | Risk / Question | Notes |
 |---|---|
 | **Polymarket liquidity** | Daily BTC markets ay may manipis na order book minsan — limit orders + slippage checks required |
-| **Strategy validation** | Ang "over 90% of candles have wicks" claim ay dapat i-backtest muna gamit historical data bago mag-live |
+| **Strategy validation** | ✅ NA-BACKTEST (2026-07-12, `tests/backtest_daily.py`, 15m Binance data, tanghali-ET periods, paper pricing model). **⚠️ HINDI nag-validate ang reference claims:** (a) ang "90% may wicks" — 67% lang ng mga araw ang na-stretch ≥1.5%, at sa mga iyon **35–40% lang ang bumalik** sa ≤0.6% ng strike; (b) 365 araw: **−$3,318** total (103 trades, 29% win rate, 69 stop-outs); 90 araw: +$372 (42% WR) — **regime-dependent**: lugi sa trending markets, panalo sa choppy. Ang volume/premium/econ filters (wala sa backtest) ang inaasahang pipigil sa momentum-day losses. **Rekomendasyon: manatili sa maliit na risk ($5–10) at ituring ang live test bilang plumbing verification, hindi kita** |
 | **Market discovery** | Nagbabago araw-araw ang daily BTC Up/Down market IDs — kailangan ng automatic discovery via Polymarket Gamma API |
 | **Geo-restrictions** | Polymarket may jurisdiction restrictions — responsibility ng user na i-verify ang compliance |
 | **Partial fills** | Paano ang handling kung partial lang ang fill ng entry/exit order? (Phase 3 design decision) |
