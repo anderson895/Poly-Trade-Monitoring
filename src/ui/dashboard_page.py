@@ -51,7 +51,7 @@ class DashboardPage(QWidget):
         }
         self.bot_card = StatCard("Bot Status", "STOPPED")
         self.bot_card.set_value("STOPPED", theme.RED)
-        self.balance_card = StatCard("Paper Balance", "—", "Simulated (walang totoong pera)")
+        self.balance_card = StatCard("Paper Balance", "—", "Simulated — no real money")
 
         cards_row = QHBoxLayout()
         cards_row.setSpacing(10)
@@ -238,11 +238,11 @@ class DashboardPage(QWidget):
         self._live_mode = mode == "LIVE"
         if self._live_mode:
             self.balance_card.set_title("Account Balance (LIVE)")
-            self.balance_card.set_sub("Totoong USDC sa Polymarket")
+            self.balance_card.set_sub("Real USDC on Polymarket")
             self.balance_card.set_value("…", theme.AMBER)
         else:
             self.balance_card.set_title("Paper Balance")
-            self.balance_card.set_sub("Simulated (walang totoong pera)")
+            self.balance_card.set_sub("Simulated — no real money")
             self.refresh_balance()
 
     def set_live_balance(self, balance: float) -> None:

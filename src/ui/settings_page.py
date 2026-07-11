@@ -10,6 +10,7 @@ import datetime as dt
 import time
 
 import qtawesome as qta
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -58,10 +59,12 @@ def _secret_field(current_key: str) -> tuple[QHBoxLayout, QLineEdit]:
         )
 
     eye.toggled.connect(_toggle)
-    row = QHBoxLayout()
+    container = QWidget()  # widget para pwedeng itago (hal. sa Paper mode)
+    row = QHBoxLayout(container)
+    row.setContentsMargins(0, 0, 0, 0)
     row.addWidget(edit)
     row.addWidget(eye)
-    return row, edit
+    return container, edit
 
 
 def _spin(value: float, suffix: str, maximum: float = 100_000.0) -> QDoubleSpinBox:
@@ -74,6 +77,11 @@ def _spin(value: float, suffix: str, maximum: float = 100_000.0) -> QDoubleSpinB
 
 
 class SettingsPage(QWidget):
+    # Para agad mag-update ang Dashboard balance card pag-Save —
+    # hindi na kailangang i-START ang bot
+    modeSaved = Signal(str)           # "PAPER" | "LIVE"
+    liveBalanceChecked = Signal(float)  # totoong USDC mula sa save-check
+
     def __init__(self, db: Database) -> None:
         super().__init__()
         self._db = db
@@ -98,31 +106,31 @@ class SettingsPage(QWidget):
 
         # --- Trading mode ---------------------------------------------------
         self._mode = QComboBox()
-        self._mode.addItems(["Paper (simulated — walang totoong pera)",
-                             "Live (TOTOONG PERA — Polymarket)"])
+        self._mode.addItems(["Paper (simulated — no real money)",
+                             "Live (REAL MONEY — Polymarket)"])
         self._mode.setCurrentIndex(1 if g("trading_mode", "paper") == "live" else 0)
         add_field("Trading Mode", self._mode)
 
         mode_warn = QLabel(
-            "Ang LIVE mode ay nangangailangan ng: Polymarket access sa network, "
-            "Private Key + Funder Address, at USDC balance. Kapag hindi makakonekta, "
-            "awtomatikong babalik sa Paper mode."
+            "Live mode requires Polymarket network access, a Private Key + "
+            "Funder Address, and a USDC balance. If the connection fails, "
+            "the bot automatically falls back to Paper mode."
         )
         mode_warn.setProperty("muted", True)
         mode_warn.setWordWrap(True)
         form.addWidget(mode_warn)
 
-        # --- Secrets ------------------------------------------------------
+        # --- Secrets (para sa LIVE mode lang — nakatago sa Paper) ----------
         # Walang Binance API key field — public data lang ang binabasa
         # ng app (charts/klines), hindi kailangan ng key
         pm_row, self._pm_private = _secret_field(secrets.KEY_PM_PRIVATE)
-        add_field("Polymarket Private Key", pm_row)
+        pm_lab = add_field("Polymarket Private Key", pm_row)
 
         self._pm_funder = QLineEdit()
         self._pm_funder.setPlaceholderText(
             secrets.get_secret(secrets.KEY_PM_FUNDER) or "0x… (Polymarket profile address)"
         )
-        add_field("Funder / Proxy Address", self._pm_funder)
+        funder_lab = add_field("Funder / Proxy Address", self._pm_funder)
 
         # Paano nag-sign up sa Polymarket — nagdidikta ng signature_type
         # (1 = email/Magic, 2 = MetaMask/browser wallet)
@@ -131,7 +139,15 @@ class SettingsPage(QWidget):
         self._wallet_type.setCurrentIndex(
             1 if str(g("pm_signature_type", "1")) == "2" else 0
         )
-        add_field("Polymarket Sign-up Method", self._wallet_type)
+        wallet_lab = add_field("Polymarket Sign-up Method", self._wallet_type)
+
+        # Mga field na para sa LIVE mode lang — itinatago sa Paper (demo)
+        self._live_only = [
+            mode_warn,
+            pm_lab, pm_row,
+            funder_lab, self._pm_funder,
+            wallet_lab, self._wallet_type,
+        ]
 
         # --- Numbers ------------------------------------------------------
         self._risk = _spin(float(g("risk_usdc", DEFAULTS["risk_usdc"])), "USDC")
@@ -155,15 +171,15 @@ class SettingsPage(QWidget):
         self._volume_mult = _spin(
             float(g("volume_spike_mult", DEFAULTS["volume_spike_mult"])), "× baseline", 10.0
         )
-        add_field("Volume Spike Filter — block entry kapag lampas (×)", self._volume_mult)
+        add_field("Volume Spike Filter — block entry above (×)", self._volume_mult)
 
         self._premium = _spin(
             float(g("premium_threshold_pct", DEFAULTS["premium_threshold_pct"])), "%", 5.0
         )
-        add_field("Coinbase Premium Filter — block entry kapag lampas (±%)", self._premium)
+        add_field("Coinbase Premium Filter — block entry above (±%)", self._premium)
 
         self._econ_day = QCheckBox(
-            "Economic Data Day — block entries TODAY (Fed meeting, CPI, atbp.)"
+            "Economic Data Day — block entries TODAY (Fed meeting, CPI, etc.)"
         )
         self._econ_day.setChecked(
             g("econ_block_date") == dt.datetime.now(dt.timezone.utc).date().isoformat()
@@ -177,15 +193,18 @@ class SettingsPage(QWidget):
             "Paper Starting Balance (USDC)", self._paper_start
         )
 
-        # Ang Paper Starting Balance ay para sa Paper mode LANG — itago
-        # kapag Live ang napili para hindi nakakalito
-        def _toggle_paper_fields(index: int) -> None:
+        # Ipakita lang ang mga field na para sa napiling mode:
+        # Paper (demo)  -> nakatago ang Private Key/Funder/Sign-up Method
+        # Live          -> nakatago ang Paper Starting Balance
+        def _toggle_mode_fields(index: int) -> None:
             paper = index == 0
             self._paper_start.setVisible(paper)
             self._paper_start_lab.setVisible(paper)
+            for w in self._live_only:
+                w.setVisible(not paper)
 
-        self._mode.currentIndexChanged.connect(_toggle_paper_fields)
-        _toggle_paper_fields(self._mode.currentIndex())
+        self._mode.currentIndexChanged.connect(_toggle_mode_fields)
+        _toggle_mode_fields(self._mode.currentIndex())
 
         # --- Buttons ------------------------------------------------------
         save_btn = QPushButton("  Save Settings")
@@ -263,6 +282,10 @@ class SettingsPage(QWidget):
         self._db.set_setting("econ_block_date", today if self._econ_day.isChecked() else "")
         self._db.set_setting("paper_start_usdc", self._paper_start.value())
         self._set_status("Settings saved ✓", theme.GREEN)
+        # I-update agad ang Dashboard balance card ayon sa napiling mode
+        self.modeSaved.emit(
+            "LIVE" if self._mode.currentIndex() == 1 else "PAPER"
+        )
         self._validate_credentials()
 
     # -------------------------------------------------- credential check
@@ -302,19 +325,33 @@ class SettingsPage(QWidget):
         async def _run() -> None:
             try:
                 balance = await asyncio.to_thread(_check)
-                self._set_status(
-                    f"✓ Settings saved — Polymarket credentials OK! "
-                    f"Balance: {balance:,.2f} USDC",
-                    theme.GREEN,
-                )
+                if balance > 0:
+                    self._set_status(
+                        f"✓ Settings saved — Polymarket credentials OK! "
+                        f"Balance: {balance:,.2f} USDC",
+                        theme.GREEN,
+                    )
+                else:
+                    # Tanggap ng Polymarket ang KAHIT ANONG valid na key —
+                    # ang 0 balance ang tanging senyales na baka mali ang
+                    # key/funder (o wala lang talagang deposit)
+                    self._set_status(
+                        "✓ Settings saved — credentials accepted, but the "
+                        "balance is 0.00 USDC. If you have funds on "
+                        "Polymarket, the Private Key or Funder Address "
+                        "may be incorrect.",
+                        theme.AMBER,
+                    )
+                if self._mode.currentIndex() == 1:  # Live ang naka-save
+                    self.liveBalanceChecked.emit(balance)
             except Exception as e:
                 self._set_status(
-                    f"✗ Settings saved PERO pumalya ang credential check: {e}",
+                    f"✗ Settings saved, but the credential check failed: {e}",
                     theme.RED,
                 )
 
         self._set_status(
-            "Settings saved ✓ — vine-verify ang Polymarket credentials…",
+            "Settings saved ✓ — verifying Polymarket credentials…",
             theme.AMBER,
         )
         try:
@@ -323,8 +360,9 @@ class SettingsPage(QWidget):
             pass  # walang running event loop (hal. sa UI tests)
 
     def _reset(self) -> None:
-        self._mode.setCurrentIndex(0)  # laging Paper ang default
-        self._wallet_type.setCurrentIndex(0)
+        # I-restore lang ang STRATEGY VALUES sa defaults — HINDI ginagalaw
+        # ang Trading Mode at Sign-up Method (account configuration iyon,
+        # hindi tunable values)
         self._risk.setValue(DEFAULTS["risk_usdc"])
         self._min_stretch.setValue(DEFAULTS["min_stretch_pct"])
         self._max_stretch.setValue(DEFAULTS["max_stretch_pct"])

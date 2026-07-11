@@ -23,8 +23,20 @@ window.show()
 
 
 def snap() -> None:
-    window.grab().save("data/settings_ui.png")
-    print("[OK] saved data/settings_ui.png")
+    window.settings._mode.setCurrentIndex(0)  # Paper
+    window.grab().save("data/settings_paper.png")
+    hidden = not window.settings._pm_funder.isVisible()
+    print(f"[{'OK' if hidden else 'FAIL'}] Paper mode: nakatago ang "
+          "live fields (Private Key/Funder/Sign-up)")
+    window.settings._mode.setCurrentIndex(1)  # Live
+    window.grab().save("data/settings_live.png")
+    shown = window.settings._pm_funder.isVisible()
+    paper_hidden = not window.settings._paper_start.isVisible()
+    print(f"[{'OK' if shown else 'FAIL'}] Live mode: kita ang live fields")
+    print(f"[{'OK' if paper_hidden else 'FAIL'}] Live mode: nakatago ang "
+          "Paper Starting Balance")
+    window.settings._mode.setCurrentIndex(0)  # ibalik sa Paper
+    print("[OK] saved data/settings_paper.png + settings_live.png")
     app.quit()
 
 

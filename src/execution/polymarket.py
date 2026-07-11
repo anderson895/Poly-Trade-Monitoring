@@ -153,7 +153,7 @@ def find_daily_btc_market(
 
     if not markets:
         raise PolymarketError(
-            f"Walang nahanap na market para sa slugs {slugs}"
+            f"No market found for slugs {slugs}"
         )
 
     market = markets[0]
@@ -204,7 +204,7 @@ class LiveExecutor:
         self.market = market
 
     def buy(self, market: str, side: str, share_price: float, usdc: float) -> Position:
-        assert self.market is not None, "walang resolved na market"
+        assert self.market is not None, "no market resolved yet"
         token = self.market.token_for(side)
         order_id = self._client.buy_limit(token, share_price, usdc)
         shares = round(usdc / share_price, 2)
@@ -226,7 +226,7 @@ class LiveExecutor:
         return self.position
 
     def sell(self, market: str, share_price: float) -> float:
-        assert self.position is not None, "walang open position"
+        assert self.position is not None, "no open position"
         assert self.market is not None
         pos = self.position
         token = self.market.token_for(pos.side)

@@ -147,11 +147,10 @@ class AboutPage(QWidget):
         title.setProperty("h1", True)
         body = QLabel(
             f"Polymarket Trading Bot — v{APP_VERSION}\n\n"
-            "Strategy: Mean Reversion (\"Rubber Band\") sa daily BTC Up/Down markets.\n"
+            "Strategy: Mean Reversion (\"Rubber Band\") on daily BTC Up/Down markets.\n"
             "Data: Binance (read-only BTC price feed).\n\n"
-            "⚠️ PAPER MODE — lahat ng trades ay simulated, walang totoong pera.\n"
-            "Ang live trading (Phase 3) ay nakabinbin hanggang ma-validate ang strategy\n"
-            "at maresolba ang Polymarket network access."
+            "Paper mode simulates every trade with no real money.\n"
+            "Switch to Live mode in Settings to trade with real USDC on Polymarket."
         )
         body.setProperty("muted", True)
         root = QVBoxLayout(self)
@@ -318,6 +317,10 @@ class MainWindow(QMainWindow):
         engine.klineUpdated.connect(self.dash.update_candle)
         engine.rangeHistoryLoaded.connect(self.dash.load_range_history)
         self.dash.rangeRequested.connect(engine.fetch_range_history)
+        # Pag-Save sa Settings: agad mag-update ang balance card + bottom
+        # bar ayon sa napiling mode — hindi na hinihintay ang START
+        self.settings.modeSaved.connect(self._on_mode)
+        self.settings.liveBalanceChecked.connect(self.dash.set_live_balance)
         engine.stretchUpdated.connect(self.dash.update_stretch)
         engine.connectionChanged.connect(self.dash.set_connection)
         engine.stateChanged.connect(self._on_state)

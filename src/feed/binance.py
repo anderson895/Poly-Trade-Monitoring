@@ -115,7 +115,7 @@ class BinanceFeed:
             except asyncio.CancelledError:
                 raise
             except Exception:
-                filelog.exception("Binance feed error (magre-reconnect sa 5s):")
+                filelog.exception("Binance feed error (reconnecting in 5s):")
                 self._on_status(False)
                 await asyncio.sleep(5)  # backoff bago mag-reconnect
 

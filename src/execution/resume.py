@@ -44,7 +44,7 @@ def decide_restore(
     if entry_ts.date() != today_utc:
         return None, "WARN", (
             f"Stale open position from {entry_ts.date().isoformat()} discarded "
-            f"— settled na ang daily market ({market})"
+            f"— the daily market has already settled ({market})"
         )
 
     if saved_mode != mode:
@@ -52,14 +52,15 @@ def decide_restore(
             # May TOTOONG position pa sa Polymarket na hindi natin mata-track
             # sa paper mode — ipaalam nang malakas sa user.
             return None, "ERROR", (
-                f"May naiwang LIVE position sa Polymarket ({position.side} "
+                f"A LIVE position is still open on Polymarket ({position.side} "
                 f"{position.shares:,.1f} shares @ {position.entry_price:.2f}, "
-                f"{market}) pero PAPER mode ka ngayon — hindi ito mata-track. "
-                "I-manage ito manually sa polymarket.com o mag-Live mode ulit."
+                f"{market}) but the bot is now in PAPER mode — it cannot be "
+                "tracked. Manage it manually on polymarket.com or switch "
+                "back to Live mode."
             )
         return None, "WARN", (
-            f"Paper position discarded — {mode} mode na ngayon "
-            f"(dating PAPER: {position.side} @ {position.entry_price:.2f})"
+            f"Paper position discarded — the bot is now in {mode} mode "
+            f"(was PAPER: {position.side} @ {position.entry_price:.2f})"
         )
 
     return position, "INFO", (

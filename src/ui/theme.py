@@ -93,6 +93,7 @@ QComboBox {{
     color: {TEXT};
 }}
 QComboBox:focus {{ border-color: {ACCENT}; }}
+QComboBox:hover {{ border-color: #4b5563; background: #111a2e; }}
 QComboBox::drop-down {{
     subcontrol-origin: padding;
     subcontrol-position: center right;
@@ -109,8 +110,18 @@ QComboBox QAbstractItemView {{
     background: {CARD};
     border: 1px solid {BORDER};
     color: {TEXT};
-    selection-background-color: {ACCENT_DIM};
     padding: 4px;
+    outline: none;
+}}
+QComboBox QAbstractItemView::item {{
+    padding: 6px 10px;
+    border-radius: 4px;
+    min-height: 22px;
+}}
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {{
+    background: {ACCENT_DIM};
+    color: #c7d2fe;
 }}
 
 QLineEdit, QDoubleSpinBox, QSpinBox {{

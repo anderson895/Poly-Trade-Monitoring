@@ -161,7 +161,7 @@ class BotEngine(QObject):
             funder = secret_store.get_secret(secret_store.KEY_PM_FUNDER)
             if not pk or not funder:
                 raise PolymarketError(
-                    "Walang Polymarket Private Key / Funder Address sa Settings"
+                    "Polymarket Private Key / Funder Address not set in Settings"
                 )
             sig_type = int(self._db.get_setting("pm_signature_type", 1))
             client = PolymarketClient(
@@ -233,7 +233,7 @@ class BotEngine(QObject):
                 if not failed_logged:
                     filelog.exception("Balance fetch failed:")
                     self.log("WARN", f"Balance fetch failed: {e} — "
-                                     "susubukan ulit kada 10s")
+                                     "retrying every 10s")
                     failed_logged = True
                 await asyncio.sleep(10)
 

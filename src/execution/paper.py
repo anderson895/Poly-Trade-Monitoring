@@ -80,7 +80,7 @@ class PaperExecutor:
 
     def sell(self, market: str, share_price: float) -> float:
         """Isara ang position; ibalik ang realized PnL (USDC)."""
-        assert self.position is not None, "walang open position"
+        assert self.position is not None, "no open position"
         pos = self.position
         proceeds = pos.shares * share_price
         cost = pos.shares * pos.entry_price
