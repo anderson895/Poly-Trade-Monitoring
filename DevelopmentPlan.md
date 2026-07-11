@@ -61,7 +61,7 @@ Ito ang pinaka-praktikal para sa project na ito. Bakit:
 │                                                      │
 │  ┌────────────┐  ┌─────────────┐  ┌──────────────┐  │
 │  │ Dashboard  │  │  Settings   │  │ Trades/Logs  │  │
-│  │ (status,   │  │ (API keys,  │  │   viewer     │  │
+│  │  status,   │  │ (API keys,  │  │   viewer     │  │
 │  │  price,    │  │  risk USDC) │  │              │  │
 │  │  START/STOP│  └─────────────┘  └──────────────┘  │
 │  └─────┬──────┘                                      │
@@ -98,26 +98,75 @@ Ito ang pinaka-praktikal para sa project na ito. Bakit:
 
 ---
 
-## 4. Strategy Logic (Mean Reversion Rules)
+## 4. Strategy Logic — AS IMPLEMENTED (v1.1.0)
 
-Mula sa reference sa `details.txt`:
+> Source of truth: `src/strategy/mean_reversion.py` (pure rules),
+> `src/strategy/filters.py` (death-trap vetoes), `src/core/engine.py`
+> (monitoring loop). Lahat ng kondisyon dito ay may unit tests.
 
-### Entry Conditions (BUY)
-- ✅ Kunin ang **Daily Open Price** (00:00 UTC) = "Price to Beat"
-- ✅ Maghintay ng **4–12 hours** pagkatapos ng daily open (huwag mag-trade agad)
-- ✅ BTC ay naka-stretch ng **1.5%–2.5%** mula sa open
-- ✅ Bilhin ang **out-of-the-money side** (DOWN kung pumped, UP kung dumped) kapag ang share price ay **15¢–25¢**
-- ✅ Position size ≤ **Risk (USDC)** setting ng user
+### Monitoring loop
 
-### Exit Conditions (SELL)
-- ✅ **Huwag hintayin ang settlement** — i-sell kapag ang shares ay nag-reprice (e.g., binili sa 20¢ → benta sa 45¢–50¢ = ~150% profit)
-- ✅ Configurable profit target (default: **+100% to +150%** ng entry price)
-- ✅ Optional stop-loss / end-of-day exit kung hindi nag-revert
+Ang bot ay sumusuri **sa BAWAT price tick** (~1/segundo mula sa Binance
+WebSocket) habang RUNNING. Ang sinusuri ay depende kung may hawak na
+position o wala:
 
-### Filters — Kailan HINDI dapat mag-trade ("Death Trap" avoidance)
-- ❌ **Economic data days** — Fed meetings, CPI releases (Phase 1: manual toggle o economic-calendar blocklist; Phase 2: API integration)
-- ❌ **Escalating volume** — kung tumataas ang volume habang nag-e-extend ang price (institutional momentum) — detectable via Binance volume data
-- ❌ **Coinbase Premium exploding** — kung ang Coinbase price >> Binance price (Phase 2 feature: kailangan ng Coinbase price feed para i-compare)
+```
+price tick → stretch = (price − period_open) / period_open × 100
+   │
+   ├─ WALANG position → ENTRY CHECKLIST (lahat dapat TRUE bago bumili)
+   └─ MAY position    → EXIT CHECKLIST (unang tumama ang mananaig)
+```
+
+### ENTRY CHECKLIST (BUY) — sunud-sunod, lahat dapat pumasa
+
+| # | Kondisyon | Default (Daily) | Saan naka-code |
+|---|---|---|---|
+| 1 | Bot state = RUNNING (naka-START) | — | `engine._handle_price` |
+| 2 | May sapat na data (period open + share price) | — | `evaluate_entry` |
+| 3 | **Hindi Economic Data Day** (manual toggle sa Settings, auto-expire kinabukasan) | naka-off | `engine._evaluate_strategy` |
+| 4 | **Wala pang trade sa kasalukuyang market period** (1 trade kada period; nagre-reset bawat bagong period) | max 1 | `engine._reset_daily_counter` |
+| 5 | **Nasa entry window**: lumipas na ang 16.7% ng period pero hindi pa 50% | 4h–12h mula 00:00 UTC | `evaluate_entry` |
+| 6 | **Stretch sa loob ng band**: \|stretch\| ≥ minimum AT ≤ maximum (lampas sa max = momentum day / death trap → SKIP) | 1.5%–2.5% | `evaluate_entry` |
+| 7 | **OTM share price sa 15¢–25¢** — Paper: estimated mula sa stretch (`0.50 − 0.15×\|stretch\|/scale`); Live: totoong **best ASK** ng target side mula sa CLOB order book (refresh kada 5s) | 0.15–0.25 | `evaluate_entry` |
+| 8 | **Volume HINDI escalating**: recent 3h avg volume < 2.0× ng prior 20h baseline (institutional momentum veto) | 2.0× | `filters.is_volume_escalating` |
+| 9 | **Coinbase premium HINDI exploding**: \|Coinbase − Binance\| < 0.15% sa direksyon ng stretch (aggressive US spot buying veto); fail-open kung walang Coinbase data | ±0.15% | `filters.is_premium_exploding` |
+
+**Kapag pumasa lahat** → BUY:
+- **Side**: DOWN kung pumped (+stretch), UP kung dumped (−stretch) — mean reversion
+- **Size**: `Risk USDC ÷ share price` shares (default $200 → ~1,000 shares sa 20¢)
+- Paper: instant simulated fill; Live: **limit order** sa best ask via `py-clob-client`
+- Naka-record sa SQLite + naka-persist ang position (para sa restart resume)
+
+### EXIT CHECKLIST (SELL) — bawat tick habang may position; unang tumama ang mananaig
+
+| # | Kondisyon | Default | Resulta |
+|---|---|---|---|
+| 1 | **Profit target**: share price ≥ entry × (1 + target) | +100% (20¢ → 40¢) | SELL, kita |
+| 2 | **Stop loss**: share price ≤ entry × (1 − stop) | −50% (20¢ → 10¢) | SELL, cut loss |
+| 3 | **End-of-period force exit**: lumipas na ang 97.9% ng period — HINDING-HINDI hinihintay ang settlement | 23.5h sa daily | SELL sa kahit anong presyo |
+
+- Paper: modeled price mula sa stretch; Live: **best BID** ng hawak na side
+- Kapag nag-fail ang live order → ERROR log + pulang alert banner (hindi tahimik)
+
+### Per-Timeframe Scaling (v1.1.0 — Market Timeframe setting)
+
+Ang mga kondisyon sa itaas ay DAILY-calibrated; awtomatikong nagsi-scale
+sa napiling Polymarket market (`scale_config_for_timeframe`): mga oras =
+parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
+
+| Timeframe | Entry window | Stretch band | Force exit | Bagong market kada |
+|---|---|---|---|---|
+| **Daily** | 4h–12h | 1.50%–2.50% | 23.5h | araw (00:00 UTC) |
+| **4 Hours** | 40–120 min | 0.61%–1.02% | 235 min | 4 oras |
+| **1 Hour** | 10–30 min | 0.31%–0.51% | 58.8 min | oras |
+| **15 Minutes** | 2.5–7.5 min | 0.15%–0.26% | 14.7 min | 15 min (:00/:15/:30/:45) |
+
+- Profit target, stop loss, at 15¢–25¢ share gate: HINDI nagbabago
+  (magkapareho ang share-price dynamics ng lahat ng markets)
+- Sa Live mode, awtomatikong lumilipat sa bagong market bawat period
+  (rollover sa `_live_price_loop`); ginagarantiya ng force exit na flat
+  bago mag-rollover
+- Ang "1 trade" allowance ay **kada period** (hindi kada araw)
 
 ---
 
@@ -159,8 +208,29 @@ Mula sa reference sa `details.txt`:
 - [x] ~~Death-trap filter: economic calendar toggle~~ ✅ DONE (2026-07-11) — manual checkbox sa Settings, naka-store ang petsa kaya auto-expire kinabukasan
 - [x] ~~Death-trap filter: Coinbase premium check~~ ✅ DONE (2026-07-11) — Coinbase spot vs Binance kada 60s, direction-aware veto sa ±0.15% (configurable); fail-open kung walang Coinbase data
 - [x] ~~Error handling + alerting sa UI~~ ✅ DONE (2026-07-11) — dismissible red alert banner sa main window tuwing ERROR (failed BUY/SELL orders ay naka-wrap na sa try/except at nagla-log ng ERROR); full tracebacks pa rin sa `data/app.log`
-- [x] ~~PyInstaller packaging~~ ✅ DONE (2026-07-11) — single `PolyTradePro.exe` (onefile, windowed); ang `data/` ay ginagawa sa TABI ng .exe (hindi temp dir) via `src/core/paths.py`
-- [ ] End-to-end testing sa maliit na real USDC amount — *kailangan ng user ang keys + USDC*
+- [x] ~~PyInstaller packaging~~ ✅ DONE (2026-07-11) — **onedir** `dist/PolyTradePro/` (mas mabilis magbukas kaysa onefile), build gamit ang **venv313/Python 3.13**; ang `data/` ay sa tabi ng exe via `src/core/paths.py`; buong build command at gotchas sa README
+- [ ] End-to-end testing sa maliit na real USDC amount — *kailangan ng user ang keys + USDC (may creds na sa Credential Manager; 0 pa ang balance)*
+
+### Phase 5 — Released + Post-Release Features ✅ (2026-07-11)
+
+**Releases (GitHub):**
+- **v1.0.0** — unang release: buong Paper/Live bot, dark UI, packaged exe
+- **v1.1.0** — **Market Timeframe selector** (Daily/4H/1H/15M) na may
+  auto-scaled strategy at live market rollover (tingnan ang Section 4)
+
+**Mga feature na naidagdag lampas sa orihinal na plano:**
+- [x] Trading-app style chart: line + candlestick w/ volume (finplot),
+      Binance-style Time filters (1s→All, YTD), hover crosshair, price
+      badge, auto-follow, 2h history prefill, live chart kahit STOPPED
+- [x] Buong English na propesyonal na UI
+- [x] Collapsible sidebar (icon-only, naka-persist)
+- [x] Credential verification sa Save Settings + agad na balance card
+      update nang hindi nag-i-START
+- [x] Cash-style Paper Balance: bumababa pagka-BUY, bumabalik ang
+      proceeds + PnL pagka-SELL
+- [x] Mode-aware Settings form; Reset = strategy values lang
+- [x] Live balance refresh loop (60s / 10s retry)
+- [x] E2E paper buy→sell simulation test; **74 unit tests total**
 
 ---
 

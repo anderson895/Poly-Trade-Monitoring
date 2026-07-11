@@ -141,10 +141,16 @@ def evaluate_entry(
 
     hrs = hours_into_period(now_utc, cfg.period_hours)
     if hrs < cfg.entry_start_hour:
+        if cfg.period_hours <= 4:  # maikling period — minutes ang malinaw
+            window = (f"{cfg.entry_start_hour * 60:.1f}-"
+                      f"{cfg.entry_end_hour * 60:.1f} min into period, "
+                      f"now {hrs * 60:.1f} min")
+        else:
+            window = (f"{cfg.entry_start_hour:.0f}h-{cfg.entry_end_hour:.0f}h "
+                      f"into period, now {hrs:.1f}h")
         return Signal(
             Action.NONE,
-            reason=f"waiting for entry window ({cfg.entry_start_hour:.2g}h-"
-                   f"{cfg.entry_end_hour:.2g}h into period, now {hrs:.2f}h)",
+            reason=f"waiting for entry window ({window})",
         )
     if hrs > cfg.entry_end_hour:
         return Signal(Action.NONE, reason="entry window closed for today")
