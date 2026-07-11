@@ -5,7 +5,9 @@ May 👁 toggle ang secret fields; blank = keep current value.
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
+import time
 
 import qtawesome as qta
 from PySide6.QtWidgets import (
@@ -83,7 +85,7 @@ class SettingsPage(QWidget):
         form = QVBoxLayout()
         form.setSpacing(8)
 
-        def add_field(label: str, widget_or_layout) -> None:
+        def add_field(label: str, widget_or_layout) -> QLabel:
             lab = QLabel(label)
             lab.setProperty("muted", True)
             lab.setContentsMargins(0, 6, 0, 0)
@@ -92,6 +94,7 @@ class SettingsPage(QWidget):
                 form.addLayout(widget_or_layout)
             else:
                 form.addWidget(widget_or_layout)
+            return lab
 
         # --- Trading mode ---------------------------------------------------
         self._mode = QComboBox()
@@ -110,9 +113,8 @@ class SettingsPage(QWidget):
         form.addWidget(mode_warn)
 
         # --- Secrets ------------------------------------------------------
-        binance_row, self._binance_key = _secret_field(secrets.KEY_BINANCE_API)
-        add_field("Binance API Key (read-only)", binance_row)
-
+        # Walang Binance API key field — public data lang ang binabasa
+        # ng app (charts/klines), hindi kailangan ng key
         pm_row, self._pm_private = _secret_field(secrets.KEY_PM_PRIVATE)
         add_field("Polymarket Private Key", pm_row)
 
@@ -171,7 +173,19 @@ class SettingsPage(QWidget):
         self._paper_start = _spin(
             float(g("paper_start_usdc", DEFAULTS["paper_start_usdc"])), "USDC"
         )
-        add_field("Paper Starting Balance (USDC)", self._paper_start)
+        self._paper_start_lab = add_field(
+            "Paper Starting Balance (USDC)", self._paper_start
+        )
+
+        # Ang Paper Starting Balance ay para sa Paper mode LANG — itago
+        # kapag Live ang napili para hindi nakakalito
+        def _toggle_paper_fields(index: int) -> None:
+            paper = index == 0
+            self._paper_start.setVisible(paper)
+            self._paper_start_lab.setVisible(paper)
+
+        self._mode.currentIndexChanged.connect(_toggle_paper_fields)
+        _toggle_paper_fields(self._mode.currentIndex())
 
         # --- Buttons ------------------------------------------------------
         save_btn = QPushButton("  Save Settings")
@@ -226,9 +240,6 @@ class SettingsPage(QWidget):
     # ------------------------------------------------------------------ save
 
     def _save(self) -> None:
-        if self._binance_key.text().strip():
-            secrets.set_secret(secrets.KEY_BINANCE_API, self._binance_key.text().strip())
-            self._binance_key.clear()
         if self._pm_private.text().strip():
             secrets.set_secret(secrets.KEY_PM_PRIVATE, self._pm_private.text().strip())
             self._pm_private.clear()
@@ -251,7 +262,65 @@ class SettingsPage(QWidget):
         today = dt.datetime.now(dt.timezone.utc).date().isoformat()
         self._db.set_setting("econ_block_date", today if self._econ_day.isChecked() else "")
         self._db.set_setting("paper_start_usdc", self._paper_start.value())
-        self._status.setText("Settings saved ✓")
+        self._set_status("Settings saved ✓", theme.GREEN)
+        self._validate_credentials()
+
+    # -------------------------------------------------- credential check
+
+    def _set_status(self, text: str, color: str) -> None:
+        self._status.setText(text)
+        self._status.setStyleSheet(f"color: {color}")
+
+    def _validate_credentials(self) -> None:
+        """Pagkatapos mag-Save: i-verify ang Polymarket credentials at
+        ipakita ang resulta (✓ may balance / ✗ may dahilan).
+
+        Read-only ito (derive creds + basahin ang balance) — WALANG order.
+        May 3 retries dahil may panandaliang network errors minsan.
+        """
+        pk = secrets.get_secret(secrets.KEY_PM_PRIVATE)
+        funder = secrets.get_secret(secrets.KEY_PM_FUNDER)
+        if not pk or not funder:
+            return  # wala pang creds — walang ive-verify
+        sig_type = 2 if self._wallet_type.currentIndex() == 1 else 1
+
+        def _check() -> float:
+            from src.execution.polymarket import PolymarketClient
+            last: Exception | None = None
+            for _ in range(3):
+                try:
+                    client = PolymarketClient(
+                        private_key=pk, funder=funder, signature_type=sig_type
+                    )
+                    client.connect()
+                    return client.get_usdc_balance()
+                except Exception as e:  # transient network errors
+                    last = e
+                    time.sleep(2)
+            raise last
+
+        async def _run() -> None:
+            try:
+                balance = await asyncio.to_thread(_check)
+                self._set_status(
+                    f"✓ Settings saved — Polymarket credentials OK! "
+                    f"Balance: {balance:,.2f} USDC",
+                    theme.GREEN,
+                )
+            except Exception as e:
+                self._set_status(
+                    f"✗ Settings saved PERO pumalya ang credential check: {e}",
+                    theme.RED,
+                )
+
+        self._set_status(
+            "Settings saved ✓ — vine-verify ang Polymarket credentials…",
+            theme.AMBER,
+        )
+        try:
+            asyncio.create_task(_run())
+        except RuntimeError:
+            pass  # walang running event loop (hal. sa UI tests)
 
     def _reset(self) -> None:
         self._mode.setCurrentIndex(0)  # laging Paper ang default

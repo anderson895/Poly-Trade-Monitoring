@@ -77,7 +77,7 @@ I-verify ang mga sumusunod pagbukas:
 
 1. Pumunta sa **Settings** (sidebar)
 2. I-verify na **200 USDC** ang "Risk Per Trade"
-3. Subukang i-type ang Binance API key / Polymarket Private Key → click
+3. Subukang i-type ang Polymarket Private Key → click
    **Save Settings** → dapat lumabas ang "Settings saved ✓"
 4. Isara at buksan ulit ang app → dapat naka-save pa rin ang values
    (secrets ay nasa Windows Credential Manager, hindi sa files)

@@ -87,6 +87,7 @@ class BotEngine(QObject):
         self._live_client: PolymarketClient | None = None
         self._live_books: dict[str, tuple[float | None, float | None]] = {}
         self._live_price_task: asyncio.Task | None = None
+        self._live_balance_task: asyncio.Task | None = None
         self._live_pending = False
 
         self._feed = BinanceFeed(
@@ -144,6 +145,9 @@ class BotEngine(QObject):
         if self._live_price_task is not None:
             self._live_price_task.cancel()
             self._live_price_task = None
+        if self._live_balance_task is not None:
+            self._live_balance_task.cancel()
+            self._live_balance_task = None
         self.stateChanged.emit(self.state.value)
         self.strategyStatus.emit("idle (press START BOT)")
         self.log("INFO", "Bot STOPPED")
@@ -173,7 +177,7 @@ class BotEngine(QObject):
             self.executor = executor
             self._live_books = {}
             self._live_price_task = asyncio.create_task(self._live_price_loop())
-            asyncio.create_task(self._refresh_live_balance())
+            self._live_balance_task = asyncio.create_task(self._live_balance_loop())
             self.log("INFO", f"LIVE mode ready — market: {market.question}")
             self.modeChanged.emit("LIVE")
             self._restore_position()
@@ -206,6 +210,32 @@ class BotEngine(QObject):
                     self.log("WARN", f"Live order book fetch failed: {e}")
                     fetch_failed_logged = True
             await asyncio.sleep(5)
+
+    async def _live_balance_loop(self) -> None:
+        """I-refresh ang totoong USDC balance nang paulit-ulit.
+
+        Kada 60s kapag OK; kada 10s kapag pumalya — para hindi maiwang
+        "…" ang balance card dahil sa isang panandaliang network error
+        (nangyari ito: isang beses lang tinatawag dati, walang retry).
+        """
+        failed_logged = False
+        while True:
+            try:
+                balance = await asyncio.to_thread(
+                    self._live_client.get_usdc_balance
+                )
+                self.liveBalance.emit(balance)
+                failed_logged = False
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                if not failed_logged:
+                    filelog.exception("Balance fetch failed:")
+                    self.log("WARN", f"Balance fetch failed: {e} — "
+                                     "susubukan ulit kada 10s")
+                    failed_logged = True
+                await asyncio.sleep(10)
 
     async def _refresh_live_balance(self) -> None:
         try:
