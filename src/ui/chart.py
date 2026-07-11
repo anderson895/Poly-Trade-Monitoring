@@ -61,27 +61,29 @@ class PriceChart(pg.PlotWidget):
     # ------------------------------------------------------------------ API
 
     def load_history(self, rows: list) -> None:
-        """Prefill mula 1m klines: (ts, o, h, l, c) — close prices ang guhit.
+        """Merge ng klines (ts, o, h, l, c, v) sa existing data.
 
-        Inilalagay ang history BAGO ang anumang live ticks na nauna nang
-        dumating, para tuloy-tuloy ang linya.
+        TOTOONG merge by timestamp — ang bagong rows ay naisisingit saanman
+        sila nabibilang, hindi lang sa unahan. Kailangan ito dahil iba-iba
+        ang granularity ng Time filter fetches at kahit anong pagkakasunod
+        (hal. All muna bago 1W) ay dapat buo pa rin ang resulta.
+
+        Mga panuntunan:
+        - t = OPEN time ng candle (interval-agnostic, laging monotonic)
+        - walang future points (gumugulo sa linya kapag humalo sa ticks)
+        - sa magkaparehong timestamp, ang EXISTING point ang panalo
+          (live ticks / mas pinong data)
         """
-        live_times = list(self._times)
-        live_prices = list(self._prices)
-        first_live = live_times[0] if live_times else float("inf")
         now = time.time()
+        merged = dict(zip(self._times, self._prices))
+        for t, _o, _h, _l, close, _v in rows:
+            if t <= now and t not in merged:
+                merged[t] = close
         self._times.clear()
         self._prices.clear()
-        for t, _o, _h, _l, close, _v in rows:
-            # t = OPEN time ng candle — interval-agnostic at laging monotonic.
-            # t <= now: huwag tanggapin ang future points — gumugulo sila sa
-            # linya kapag humalo sa live ticks
-            if t < first_live and t <= now:
-                self._times.append(t)
-                self._prices.append(close)
-        for t, p in zip(live_times, live_prices):
+        for t in sorted(merged):
             self._times.append(t)
-            self._prices.append(p)
+            self._prices.append(merged[t])
         if self._prices:
             self._curve.setData(list(self._times), list(self._prices))
             self._apply_x_window()

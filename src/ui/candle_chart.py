@@ -94,14 +94,13 @@ class CandleChart(QWidget):
         self._update_marker(price)
 
     def load_history(self, rows: list) -> None:
-        """Prefill mula 1m klines: (ts, o, h, l, c, v) → buo agad ang chart."""
-        first_live = self._candles[0][0] if self._candles else float("inf")
-        hist = [
-            [ts, o, c, h, l, v] for ts, o, h, l, c, v in rows if ts < first_live
-        ]
-        self._candles = hist + self._candles
-        if len(self._candles) > MAX_CANDLES:
-            self._candles = self._candles[-MAX_CANDLES:]
+        """Prefill mula 1m klines — totoong merge by timestamp; ang
+        existing (live) candles ang panalo sa magkaparehong t0."""
+        merged = {c[0]: c for c in self._candles}
+        for ts, o, h, l, c, v in rows:
+            if ts not in merged:
+                merged[ts] = [ts, o, c, h, l, v]
+        self._candles = [merged[t] for t in sorted(merged)][-MAX_CANDLES:]
         self._redraw()
 
     def clear_data(self) -> None:
