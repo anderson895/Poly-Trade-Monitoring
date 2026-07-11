@@ -120,6 +120,31 @@ class SettingsPage(QWidget):
         mode_warn.setWordWrap(True)
         form.addWidget(mode_warn)
 
+        # --- Market timeframe ----------------------------------------------
+        # Aling Polymarket BTC Up/Down market ang ite-trade (dati daily lang)
+        self._timeframe = QComboBox()
+        self._timeframes = [
+            ("Daily", "daily"),
+            ("4 Hours", "4h"),
+            ("1 Hour", "1h"),
+            ("15 Minutes", "15m"),
+        ]
+        self._timeframe.addItems([label for label, _ in self._timeframes])
+        saved_tf = str(g("market_timeframe", "daily"))
+        self._timeframe.setCurrentIndex(next(
+            (i for i, (_, v) in enumerate(self._timeframes) if v == saved_tf), 0
+        ))
+        add_field("Market Timeframe (Polymarket BTC Up/Down)", self._timeframe)
+
+        tf_note = QLabel(
+            "Strategy timings and stretch thresholds scale automatically to "
+            "the selected timeframe (e.g., the 1.5% daily entry stretch "
+            "becomes ~0.31% on 1-hour markets)."
+        )
+        tf_note.setProperty("muted", True)
+        tf_note.setWordWrap(True)
+        form.addWidget(tf_note)
+
         # --- Secrets (para sa LIVE mode lang — nakatago sa Paper) ----------
         # Walang Binance API key field — public data lang ang binabasa
         # ng app (charts/klines), hindi kailangan ng key
@@ -270,6 +295,10 @@ class SettingsPage(QWidget):
         )
         self._db.set_setting(
             "pm_signature_type", "2" if self._wallet_type.currentIndex() == 1 else "1"
+        )
+        self._db.set_setting(
+            "market_timeframe",
+            self._timeframes[self._timeframe.currentIndex()][1],
         )
         self._db.set_setting("risk_usdc", self._risk.value())
         self._db.set_setting("min_stretch_pct", self._min_stretch.value())

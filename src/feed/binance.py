@@ -52,9 +52,12 @@ class BinanceFeed:
         self._on_kline = on_kline
         self._history_sent = False
         self._task: Optional[asyncio.Task] = None
-        self._current_utc_date: Optional[dt.date] = None
+        # Market period: "1d" (default/daily), "4h", "1h", o "15m" —
+        # dito naka-angkla ang "open"/price-to-beat at ang stretch %
+        self._period_interval = "1d"
+        self._period_start: Optional[float] = None  # unix secs, aligned
         self.last_price: Optional[float] = None
-        self.daily_open: Optional[float] = None
+        self.daily_open: Optional[float] = None  # open ng KASALUKUYANG period
         self.hourly_volumes: list[float] = []  # completed 1h candles, oldest->newest
         self._volumes_fetched_at: float = 0.0
 
@@ -74,9 +77,19 @@ class BinanceFeed:
             self._task = None
         self._on_status(False)
 
+    def set_period(self, interval: str) -> None:
+        """Palitan ang market period ("1d", "4h", "1h", "15m").
+
+        Sync at instant — nire-reset lang ang period tracking; ang susunod
+        na price tick ang magre-refresh ng open via _check_rollover.
+        """
+        if interval != self._period_interval:
+            self._period_interval = interval
+            self._period_start = None  # pipilitin ang refresh sa susunod na tick
+
     @property
     def pct_from_open(self) -> Optional[float]:
-        """% distance ng current price mula sa daily open (stretch)."""
+        """% distance ng current price mula sa PERIOD open (stretch)."""
         if self.last_price is None or not self.daily_open:
             return None
         return (self.last_price - self.daily_open) / self.daily_open * 100.0
@@ -119,17 +132,25 @@ class BinanceFeed:
                 self._on_status(False)
                 await asyncio.sleep(5)  # backoff bago mag-reconnect
 
+    PERIOD_SECS = {"1d": 86400, "4h": 14400, "1h": 3600, "15m": 900}
+
     async def _refresh_daily_open(self) -> None:
-        """Kunin ang open ng kasalukuyang 1d UTC candle (ang 'Price to Beat')."""
+        """Kunin ang open ng KASALUKUYANG period candle ('Price to Beat').
+
+        Gumagana sa kahit anong interval (1d/4h/1h/15m) — ang huling kline
+        ay ang in-progress na period; index 1 = open, index 0 = aligned
+        na period start (ms).
+        """
         async with httpx.AsyncClient(base_url=BINANCE_REST_URL, timeout=10) as client:
             resp = await client.get(
                 "/api/v3/klines",
-                params={"symbol": "BTCUSDT", "interval": "1d", "limit": 1},
+                params={"symbol": "BTCUSDT",
+                        "interval": self._period_interval, "limit": 1},
             )
             resp.raise_for_status()
             kline = resp.json()[0]
             self.daily_open = float(kline[1])  # index 1 = open price
-            self._current_utc_date = dt.datetime.now(dt.timezone.utc).date()
+            self._period_start = kline[0] / 1000.0
             self._on_daily_open(self.daily_open)
 
     async def fetch_klines(self, interval: str, limit: int) -> list:
@@ -163,8 +184,11 @@ class BinanceFeed:
         self._on_history(rows)
 
     async def _check_day_rollover(self) -> None:
-        today = dt.datetime.now(dt.timezone.utc).date()
-        if self._current_utc_date is not None and today != self._current_utc_date:
+        """Mag-refresh ng period open kapag pumasok na sa bagong period."""
+        secs = self.PERIOD_SECS[self._period_interval]
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        aligned = now - now % secs
+        if self._period_start is None or aligned != self._period_start:
             await self._refresh_daily_open()
 
     async def _refresh_volumes(self) -> None:

@@ -127,17 +127,48 @@ def _order_id(resp: object) -> str:
 # ------------------------------------------------------------ market lookup
 
 
-def find_daily_btc_market(
-    date_utc: dt.date, http_client: Optional[httpx.Client] = None
-) -> DailyBtcMarket:
-    """Hanapin ang daily BTC Up/Down market sa Gamma API.
+def build_market_slugs(timeframe: str, now_utc: dt.datetime) -> list[str]:
+    """Slug candidates ng KASALUKUYANG BTC Up/Down market ng timeframe.
 
-    Slug pattern — VERIFIED sa totoong Gamma API (2026-07-11):
-    'bitcoin-up-or-down-on-july-11-2026' (may year suffix ang mga bago;
-    ang mga luma ay walang year, kaya may fallback).
+    Mga pattern — VERIFIED sa totoong Gamma API (2026-07-11):
+    - daily : 'bitcoin-up-or-down-on-july-11-2026' (legacy fallback:
+              walang year)
+    - 15m/4h: 'btc-updown-15m-<period_start_unix>' (UTC-aligned)
+    - 1h    : 'bitcoin-up-or-down-july-13-2026-9am-et' (naka-pangalan sa
+              ET hour — kailangan ng America/New_York conversion, may DST)
     """
-    base = f"bitcoin-up-or-down-on-{date_utc.strftime('%B').lower()}-{date_utc.day}"
-    slugs = [f"{base}-{date_utc.year}", base]  # bago muna, tapos legacy
+    if timeframe == "daily":
+        base = (f"bitcoin-up-or-down-on-"
+                f"{now_utc.strftime('%B').lower()}-{now_utc.day}")
+        return [f"{base}-{now_utc.year}", base]  # bago muna, tapos legacy
+
+    if timeframe in ("15m", "4h"):
+        secs = {"15m": 900, "4h": 14400}[timeframe]
+        ts = now_utc.timestamp()
+        start = int(ts - ts % secs)
+        return [f"btc-updown-{timeframe}-{start}"]
+
+    if timeframe == "1h":
+        import pytz  # dep ng pandas — laging available
+
+        et = now_utc.astimezone(pytz.timezone("America/New_York"))
+        hour12 = et.strftime("%I").lstrip("0")  # '9', '12' — walang zero
+        ampm = et.strftime("%p").lower()        # 'am' / 'pm'
+        return [
+            f"bitcoin-up-or-down-{et.strftime('%B').lower()}-{et.day}-"
+            f"{et.year}-{hour12}{ampm}-et"
+        ]
+
+    raise PolymarketError(f"Unknown market timeframe: {timeframe!r}")
+
+
+def find_btc_market(
+    timeframe: str,
+    now_utc: dt.datetime,
+    http_client: Optional[httpx.Client] = None,
+) -> DailyBtcMarket:
+    """Hanapin ang kasalukuyang BTC Up/Down market ng napiling timeframe."""
+    slugs = build_market_slugs(timeframe, now_utc)
     client = http_client or httpx.Client(timeout=15)
     markets: list = []
     try:
@@ -172,6 +203,16 @@ def find_daily_btc_market(
         token_up=mapping["UP"],
         token_down=mapping["DOWN"],
     )
+
+
+def find_daily_btc_market(
+    date_utc: dt.date, http_client: Optional[httpx.Client] = None
+) -> DailyBtcMarket:
+    """Back-compat wrapper: daily market ng ibinigay na UTC date."""
+    now_utc = dt.datetime(
+        date_utc.year, date_utc.month, date_utc.day, tzinfo=dt.timezone.utc
+    )
+    return find_btc_market("daily", now_utc, http_client=http_client)
 
 
 def _as_list(value: object) -> list:

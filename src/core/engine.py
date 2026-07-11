@@ -30,7 +30,7 @@ from src.execution.polymarket import (
     LiveExecutor,
     PolymarketClient,
     PolymarketError,
-    find_daily_btc_market,
+    find_btc_market,
 )
 from src.execution.resume import decide_restore
 from src.feed.binance import BinanceFeed
@@ -46,10 +46,14 @@ from src.strategy.mean_reversion import (
     StrategyConfig,
     evaluate_entry,
     evaluate_exit,
+    scale_config_for_timeframe,
+    stretch_scale,
     target_side,
 )
 
 DEFAULT_RISK_USDC = 200.0
+# Polymarket timeframe -> Binance kline interval (para sa period open)
+TF_TO_INTERVAL = {"daily": "1d", "4h": "4h", "1h": "1h", "15m": "15m"}
 
 
 class BotState(Enum):
@@ -89,6 +93,12 @@ class BotEngine(QObject):
         self._live_price_task: asyncio.Task | None = None
         self._live_balance_task: asyncio.Task | None = None
         self._live_pending = False
+        # Market timeframe (daily/4h/1h/15m) — sine-set sa start() mula
+        # sa settings; ang scale ay para sa paper share-price model
+        self._timeframe = "daily"
+        self._price_scale = 1.0
+        self._period_secs = 86400.0
+        self._live_market_switching = False
 
         self._feed = BinanceFeed(
             on_price=self._handle_price,
@@ -111,6 +121,10 @@ class BotEngine(QObject):
         kahit hindi pa naka-START — ang START/STOP ay para lang sa
         trading (strategy evaluation).
         """
+        # I-apply ang naka-save na timeframe para tama ang period open at
+        # stretch % kahit hindi pa naka-START ang bot
+        tf = str(self._db.get_setting("market_timeframe", "daily"))
+        self._feed.set_period(TF_TO_INTERVAL.get(tf, "1d"))
         self._monitor.start()
         self._feed.start()
 
@@ -130,11 +144,13 @@ class BotEngine(QObject):
             self.modeChanged.emit("PAPER")
             self._restore_position()
 
+        self._feed.set_period(TF_TO_INTERVAL[self._timeframe])
         self._feed.start()  # idempotent — tumatakbo na mula start_monitors
         self._coinbase.start()
         self.stateChanged.emit(self.state.value)
         self.log("INFO", f"Bot STARTED [{mode.upper()} MODE] — "
-                         "monitoring BTC, mean reversion strategy active")
+                         f"{self._timeframe.upper()} market, "
+                         "mean reversion strategy active")
 
     async def stop(self) -> None:
         if self.state is BotState.STOPPED:
@@ -168,8 +184,10 @@ class BotEngine(QObject):
                 private_key=pk, funder=funder, signature_type=sig_type
             )
             await asyncio.to_thread(client.connect)
-            today = dt.datetime.now(dt.timezone.utc).date()
-            market = await asyncio.to_thread(find_daily_btc_market, today)
+            now = dt.datetime.now(dt.timezone.utc)
+            market = await asyncio.to_thread(
+                find_btc_market, self._timeframe, now
+            )
 
             executor = LiveExecutor(self._db, client)
             executor.set_market(market)
@@ -190,12 +208,31 @@ class BotEngine(QObject):
             self._live_pending = False
 
     async def _live_price_loop(self) -> None:
-        """I-refresh ang best bid/ask ng UP at DOWN tokens kada 5 segundo."""
+        """I-refresh ang best bid/ask kada 5 segundo + market rollover.
+
+        Sa 15m/1h/4h timeframes, BAGO ang market bawat period — kapag
+        pumasok na sa bagong period at flat tayo (ginagarantiya ng
+        end-of-period exit), awtomatikong lilipat sa bagong market.
+        """
         assert isinstance(self.executor, LiveExecutor)
-        market = self.executor.market
         fetch_failed_logged = False
+        current_period = self._aligned_period_start()
         while True:
             try:
+                # --- market rollover check --------------------------------
+                aligned = self._aligned_period_start()
+                if aligned != current_period and self.executor.position is None:
+                    now = dt.datetime.now(dt.timezone.utc)
+                    market = await asyncio.to_thread(
+                        find_btc_market, self._timeframe, now
+                    )
+                    self.executor.set_market(market)
+                    self._live_books = {}
+                    current_period = aligned
+                    self.log("INFO", f"New {self._timeframe} period — "
+                                     f"market: {market.question}")
+
+                market = self.executor.market
                 for side in ("UP", "DOWN"):
                     token = market.token_for(side)
                     self._live_books[side] = await asyncio.to_thread(
@@ -210,6 +247,10 @@ class BotEngine(QObject):
                     self.log("WARN", f"Live order book fetch failed: {e}")
                     fetch_failed_logged = True
             await asyncio.sleep(5)
+
+    def _aligned_period_start(self) -> float:
+        now = dt.datetime.now(dt.timezone.utc).timestamp()
+        return now - now % self._period_secs
 
     async def _live_balance_loop(self) -> None:
         """I-refresh ang totoong USDC balance nang paulit-ulit.
@@ -267,6 +308,15 @@ class BotEngine(QObject):
             self.executor.MODE,
             dt.datetime.now(dt.timezone.utc).date(),
         )
+        # Sa mas maiikling timeframes: stale na rin kapag IBANG period na
+        # ang kasalukuyan (settled na ang market ng lumang position)
+        if (position is not None and self._timeframe != "daily"
+                and position.entry_ts.timestamp() < self._aligned_period_start()):
+            level, message = "WARN", (
+                f"Stale open position discarded — the {self._timeframe} "
+                "market period has already ended"
+            )
+            position = None
         if position is not None:
             self.executor.position = position
         elif message:
@@ -284,10 +334,15 @@ class BotEngine(QObject):
         filelog.log(py_level, message)
 
     def _load_config(self) -> StrategyConfig:
-        """Buuin ang StrategyConfig mula sa user settings sa DB."""
+        """Buuin ang StrategyConfig mula sa user settings sa DB.
+
+        Ang mga setting ay DAILY-calibrated; kapag mas maikli ang napiling
+        market timeframe, awtomatikong sini-scale (oras = fraction ng
+        period, stretch = sqrt-of-time).
+        """
         g = self._db.get_setting
         base = StrategyConfig()
-        return StrategyConfig(
+        cfg = StrategyConfig(
             min_stretch_pct=float(g("min_stretch_pct", base.min_stretch_pct)),
             max_stretch_pct=float(g("max_stretch_pct", base.max_stretch_pct)),
             profit_target_pct=float(g("profit_target_pct", base.profit_target_pct)),
@@ -296,6 +351,14 @@ class BotEngine(QObject):
                 g("premium_threshold_pct", base.premium_threshold_pct)
             ),
         )
+        self._timeframe = str(g("market_timeframe", "daily"))
+        if self._timeframe not in TF_TO_INTERVAL:
+            self._timeframe = "daily"
+        self._price_scale = stretch_scale(self._timeframe)
+        self._period_secs = cfg.period_hours * 3600.0
+        cfg = scale_config_for_timeframe(cfg, self._timeframe)
+        self._period_secs = cfg.period_hours * 3600.0
+        return cfg
 
     # ------------------------------------------------------------- handlers
 
@@ -328,7 +391,8 @@ class BotEngine(QObject):
         if live and self.executor.market is not None:
             market = f"{self.executor.market.question} [LIVE]"
         else:
-            market = f"BTC Up/Down {now.date().isoformat()} [PAPER]"
+            market = (f"BTC Up/Down [{self._timeframe}] "
+                      f"{now.strftime('%Y-%m-%d %H:%M')} [PAPER]")
 
         if self.executor.position is None:
             # Death trap guard #1: Economic Data Day (manual toggle sa Settings)
@@ -346,7 +410,7 @@ class BotEngine(QObject):
                     self.strategyStatus.emit("WAITING — no live order book data yet")
                     return
             else:
-                share_price = estimate_otm_share_price(stretch)
+                share_price = estimate_otm_share_price(stretch, self._price_scale)
             sig = evaluate_entry(now, stretch, share_price, self._trades_today, self.config)
             if sig.action is Action.ENTER:
                 # Death trap guard #2: volume escalation veto
@@ -411,7 +475,9 @@ class BotEngine(QObject):
                     self.strategyStatus.emit("WAITING — no live order book data yet")
                     return
             else:
-                share_price = position_share_price(stretch, pos.side)
+                share_price = position_share_price(
+                    stretch, pos.side, self._price_scale
+                )
             sig = evaluate_exit(now, pos, share_price, self.config)
             if sig.action is Action.EXIT:
                 tag = self.executor.MODE

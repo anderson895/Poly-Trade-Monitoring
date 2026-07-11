@@ -100,7 +100,7 @@ class TestExit(unittest.TestCase):
         # 23:45 UTC — force exit kahit walang target/stop
         sig = evaluate_exit(utc(23, 45), self._pos(0.20), 0.30, CFG)
         self.assertIs(sig.action, Action.EXIT)
-        self.assertIn("end-of-day", sig.reason)
+        self.assertIn("end-of-period", sig.reason)
 
 
 class TestHelpers(unittest.TestCase):

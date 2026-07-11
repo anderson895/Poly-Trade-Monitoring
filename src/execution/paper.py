@@ -27,20 +27,27 @@ PRICE_FLOOR = 0.03
 PRICE_CEIL = 0.50
 
 
-def estimate_otm_share_price(stretch_pct: float) -> float:
-    """Estimated na presyo ng out-of-the-money share given ang BTC stretch."""
-    price = PRICE_AT_ZERO - PRICE_SLOPE_PER_PCT * abs(stretch_pct)
+def estimate_otm_share_price(stretch_pct: float, scale: float = 1.0) -> float:
+    """Estimated na presyo ng out-of-the-money share given ang BTC stretch.
+
+    Ang `scale` ay ang stretch_scale ng timeframe (1.0 = daily) — sa mas
+    maikling periods, mas maliit na stretch ang katumbas ng parehong
+    share-price move (hal. +0.3% sa 1h market ~ +1.5% sa daily).
+    """
+    price = PRICE_AT_ZERO - PRICE_SLOPE_PER_PCT * abs(stretch_pct) / scale
     return max(PRICE_FLOOR, min(PRICE_CEIL, price))
 
 
-def position_share_price(stretch_pct: float, side: str) -> float:
+def position_share_price(
+    stretch_pct: float, side: str, scale: float = 1.0
+) -> float:
     """Presyo ng hawak nating side given ang kasalukuyang stretch.
 
     Kung ang stretch ay papunta LABAN sa side natin (e.g., hawak natin DOWN
     tapos naka-+2% pa rin ang BTC), mura ang share natin. Kung bumalik na
     ang presyo PABOR sa atin (nag-cross sa kabila ng open), mahal na ito.
     """
-    otm = estimate_otm_share_price(stretch_pct)
+    otm = estimate_otm_share_price(stretch_pct, scale)
     against_us = (side == "DOWN" and stretch_pct > 0) or (
         side == "UP" and stretch_pct < 0
     )
