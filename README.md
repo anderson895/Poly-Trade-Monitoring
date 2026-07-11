@@ -168,16 +168,37 @@ Mag-test muna nang matagal sa Paper mode.
   (failed BUY/SELL order, live setup failure). Dismissible via ✕.
 - **Single .exe packaging** — tingnan sa baba.
 
-## Pag-package bilang Single .exe (PyInstaller)
+## Pag-package (PyInstaller)
+
+### Recommended: folder build (onedir) — MABILIS magbukas (~2s)
 
 ```powershell
-.\venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed --name PolyTradePro --paths . src\main.py
+.\venv\Scripts\python.exe -m PyInstaller --noconfirm --onedir --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PIL src\main.py
 ```
 
-- Output: **`dist\PolyTradePro.exe`** — kopyahin ito kahit saan; gagawa ito ng
-  sariling `data\` folder (database + logs) sa TABI ng .exe.
-- Ang secrets ay nasa Windows Credential Manager pa rin — hindi kasama sa .exe.
-- Unang bukas ay medyo mabagal (~5–15s) dahil onefile extraction — normal ito.
+- Output: **`dist\PolyTradePro\`** folder (~177 MB) — i-zip ang BUONG folder
+  para i-distribute; ang user ay magpapatakbo ng `PolyTradePro.exe` sa loob.
+- Gagawa ito ng sariling `data\` folder (database + logs) sa loob ng
+  app folder. Ang secrets ay nasa Windows Credential Manager — hindi kasama.
+
+### Alternative: single .exe (onefile) — HUWAG gamitin kung ayaw ng mabagal
+
+```powershell
+.\venv\Scripts\python.exe -m PyInstaller --noconfirm --onefile --windowed --name PolyTradePro --paths . --icon icon.ico --add-data "icon_square.png;." --add-data "assets;assets" --exclude-module PIL src\main.py
+```
+
+- Isang file lang (~72 MB) PERO **10–60 segundo bago magbukas** kada launch
+  (self-extraction + antivirus scan) — kaya hindi ito ang recommended.
+
+### Mga paalala sa build
+
+- **⚠️ HUWAG tanggalin ang `--exclude-module PIL`** — ang Python 3.10.0 ay may
+  CPython bug (bpo-45757) na nagpapa-crash sa PyInstaller kapag siniscan ang
+  Pillow. Ang Pillow ay pang-icon-generation lang (`tests\make_icon.py`),
+  hindi kailangan ng app mismo.
+- **Icon sa Explorer mukhang luma/walang icon pagkatapos ng rebuild?**
+  Icon cache lang iyon ng Windows — patakbuhin ang `ie4uinit.exe -show`,
+  o i-rename ang exe, o i-restart ang Explorer.
 
 ## Troubleshooting
 

@@ -314,7 +314,10 @@ class MainWindow(QMainWindow):
 
         # ---- Engine wiring -----------------------------------------------------
         engine.priceUpdated.connect(self.dash.update_price)
-        engine.dailyOpenUpdated.connect(self.dash.set_daily_open)
+        engine.historyLoaded.connect(self.dash.load_history)
+        engine.klineUpdated.connect(self.dash.update_candle)
+        engine.rangeHistoryLoaded.connect(self.dash.load_range_history)
+        self.dash.rangeRequested.connect(engine.fetch_range_history)
         engine.stretchUpdated.connect(self.dash.update_stretch)
         engine.connectionChanged.connect(self.dash.set_connection)
         engine.stateChanged.connect(self._on_state)

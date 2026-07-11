@@ -1,4 +1,11 @@
 """Dark theme (QSS) — pattern sa PolyTrade Pro mockup."""
+from src.core.paths import resource_path
+
+# Icon assets para sa QSS subcontrols (ang CSS border-triangle trick ay
+# hindi maaasahan sa Qt) — gawa via tests/make_arrows.py
+_PLUS = resource_path("assets/plus.png").as_posix()
+_MINUS = resource_path("assets/minus.png").as_posix()
+_CHEVRON = resource_path("assets/chevron_down.png").as_posix()
 
 # Palette
 BG = "#0b0f1a"
@@ -93,11 +100,10 @@ QComboBox::drop-down {{
     border: none;
 }}
 QComboBox::down-arrow {{
-    image: none;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid {MUTED};
-    margin-right: 8px;
+    image: url("{_CHEVRON}");
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
 }}
 QComboBox QAbstractItemView {{
     background: {CARD};
@@ -139,16 +145,14 @@ QDoubleSpinBox::down-button:hover, QSpinBox::down-button:hover {{
     background: #374151;
 }}
 QDoubleSpinBox::up-arrow, QSpinBox::up-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-bottom: 5px solid {MUTED};
+    image: url("{_PLUS}");
+    width: 11px;
+    height: 11px;
 }}
 QDoubleSpinBox::down-arrow, QSpinBox::down-arrow {{
-    image: none;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 5px solid {MUTED};
+    image: url("{_MINUS}");
+    width: 11px;
+    height: 11px;
 }}
 
 QScrollArea {{ background: transparent; border: none; }}

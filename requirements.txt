@@ -10,3 +10,6 @@ qtawesome>=1.4
 
 # Phase 3 (live execution)
 py-clob-client>=0.17
+
+# Candlestick chart (lazy-loaded kapag pinili ang "Candles" sa dashboard)
+finplot>=1.9

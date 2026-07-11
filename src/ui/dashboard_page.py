@@ -4,13 +4,16 @@ from __future__ import annotations
 import datetime as dt
 
 import qtawesome as qta
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -32,6 +35,9 @@ LEVEL_COLORS = {
 
 
 class DashboardPage(QWidget):
+    # (interval, limit) — hiling na mas mahabang klines para sa Time filter
+    rangeRequested = Signal(str, int)
+
     def __init__(self, db: Database) -> None:
         super().__init__()
         self._db = db
@@ -62,12 +68,49 @@ class DashboardPage(QWidget):
         self._pct_label = QLabel("")
         self._pct_label.setStyleSheet(f"color: {theme.MUTED}; font-size: 15px")
 
+        # Binance-style Time filter: (label, window minutes, fetch spec)
+        # fetch spec = (interval, limit) kapag kailangan ng mas mahabang
+        # history kaysa sa 2h na 1m prefill; +1 sa limit dahil tinatanggal
+        # ang in-progress na huling kline
+        self._window_combo = QComboBox()
+        self._windows = [
+            ("1s", 2, None),
+            ("15m", 15, None),
+            ("1H", 60, None),
+            ("4H", 240, ("1m", 241)),
+            ("1D", 1440, ("15m", 97)),
+            ("1W", 10080, ("1h", 169)),
+            ("YTD", None, None),        # dynamic — kinukuwenta sa _on_window
+            ("All", None, ("1w", 500)),  # weekly klines mula pa 2017
+        ]
+        self._window_combo.addItems([label for label, _, _ in self._windows])
+        self._window_combo.setCurrentIndex(1)  # default: 15m
+        self._window_combo.setFixedWidth(76)
+
+        # Chart type: Line (default, magaan) o Candles (finplot, lazy-load).
+        # Naka-save ang huling pinili para ganoon din sa susunod na bukas.
+        self._type_combo = QComboBox()
+        self._type_combo.addItems(["Line", "Candles"])
+        self._type_combo.setFixedWidth(96)
+
         price_row = QHBoxLayout()
+        price_row.setSpacing(8)
         price_row.addWidget(self._price_label)
         price_row.addWidget(self._pct_label)
         price_row.addStretch()
+        price_row.addWidget(self._type_combo)
+        price_row.addWidget(self._window_combo)
 
         self.chart = PriceChart()
+        self._candle_chart = None  # lazy — ginagawa sa unang pili ng Candles
+        self._history: list = []  # 1m klines — pang-prefill ng lazy candle chart
+        self._chart_stack = QStackedWidget()
+        self._chart_stack.addWidget(self.chart)
+
+        self._window_combo.currentIndexChanged.connect(self._on_window)
+        self._type_combo.currentIndexChanged.connect(self._on_chart_type)
+        if str(self._db.get_setting("chart_type", "line")) == "candles":
+            self._type_combo.setCurrentIndex(1)  # triggers _on_chart_type
 
         self._strategy_label = QLabel("Strategy: idle (press START BOT)")
         self._strategy_label.setProperty("muted", True)
@@ -78,7 +121,7 @@ class DashboardPage(QWidget):
         chart_col.setContentsMargins(14, 12, 14, 12)
         chart_col.addWidget(chart_title)
         chart_col.addLayout(price_row)
-        chart_col.addWidget(self.chart, stretch=1)
+        chart_col.addWidget(self._chart_stack, stretch=1)
         chart_col.addWidget(self._strategy_label)
 
         # ---- Recent logs panel --------------------------------------------
@@ -117,15 +160,59 @@ class DashboardPage(QWidget):
     def update_price(self, price: float) -> None:
         self._price_label.setText(f"${price:,.2f}")
         self.chart.add_point(price)
+        if self._candle_chart is not None:
+            self._candle_chart.add_point(price)
+
+    def load_history(self, rows: list) -> None:
+        """Prefill ng chart mula 1m klines para agad may laman pagbukas."""
+        self._history = rows
+        self.chart.load_history(rows)
+        if self._candle_chart is not None:
+            self._candle_chart.load_history(rows)
+
+    def update_candle(self, k: tuple) -> None:
+        """Live 1m kline (t,o,h,l,c,v) — para sa candle chart + volume."""
+        if self._candle_chart is not None:
+            self._candle_chart.update_candle(k)
+
+    def _on_window(self, index: int) -> None:
+        label, minutes, fetch = self._windows[index]
+        if label == "YTD":
+            # Mula Enero 1 ng kasalukuyang taon hanggang ngayon
+            now = dt.datetime.now(dt.timezone.utc)
+            jan1 = dt.datetime(now.year, 1, 1, tzinfo=dt.timezone.utc)
+            days = (now - jan1).days + 1
+            minutes = days * 1440
+            fetch = ("1d", days + 2)
+
+        self.chart.set_window_minutes(minutes)
+        if fetch is not None:
+            # Kunin ang mas mahabang history (async) — idadagdag sa chart
+            # via load_range_history kapag dumating
+            self.rangeRequested.emit(*fetch)
+
+    def load_range_history(self, rows: list) -> None:
+        """On-demand klines para sa 4H/1D/1W — line chart lang (ang candle
+        chart ay 1m ang interval, gugulo kung haluan ng 15m/1h candles)."""
+        self.chart.load_history(rows)
 
     def update_stretch(self, pct: float) -> None:
         color = theme.GREEN if pct >= 0 else theme.RED
         self._pct_label.setText(f"{pct:+.2f}%")
         self._pct_label.setStyleSheet(f"color: {color}; font-size: 15px; font-weight: bold")
 
-    def set_daily_open(self, open_price: float) -> None:
-        entry_pct = float(self._db.get_setting("min_stretch_pct", 1.5))
-        self.chart.set_bands(open_price, entry_pct)
+    def _on_chart_type(self, index: int) -> None:
+        if index == 1 and self._candle_chart is None:
+            # Lazy load — dito lang bumibigat (finplot + pandas import)
+            from src.ui.candle_chart import CandleChart
+            self._candle_chart = CandleChart()
+            if self._history:
+                self._candle_chart.load_history(self._history)
+            self._chart_stack.addWidget(self._candle_chart)
+        self._chart_stack.setCurrentIndex(index)
+        # Ang Time filter ay para sa Line chart lang
+        self._window_combo.setVisible(index == 0)
+        self._db.set_setting("chart_type", "candles" if index == 1 else "line")
 
     def set_connection(self, name: str, up: bool) -> None:
         key = "binance" if name == "binance_ws" else name

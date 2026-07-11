@@ -5,8 +5,15 @@ Run:  .\\venv\\Scripts\\python.exe -m src.main
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from pathlib import Path
+
+# PySide6 ang Qt binding ng app. Kung may PyQt6 na maka-install (dependency
+# ng ibang library), ito ang pumipigil sa qtawesome/qtpy na doon kumapit —
+# nagko-crash ang icons kapag naghalo ang dalawang binding.
+os.environ.setdefault("QT_API", "pyside6")
+os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
 
 # Para gumana kahit direktang patakbuhin (python main.py) —
 # idagdag ang project root sa path bago ang src.* imports

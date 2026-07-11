@@ -68,6 +68,9 @@ class BotEngine(QObject):
     logAdded = Signal(str, str)           # (level, message)
     modeChanged = Signal(str)             # "PAPER" | "LIVE"
     liveBalance = Signal(float)           # totoong USDC balance (live mode)
+    historyLoaded = Signal(list)          # 1m klines para sa chart prefill
+    klineUpdated = Signal(tuple)          # live 1m kline (t,o,h,l,c,v)
+    rangeHistoryLoaded = Signal(list)     # on-demand klines (Time filter)
 
     def __init__(self, db: Database, config: StrategyConfig | None = None) -> None:
         super().__init__()
@@ -90,6 +93,8 @@ class BotEngine(QObject):
             on_price=self._handle_price,
             on_daily_open=self._handle_daily_open,
             on_status=lambda up: self.connectionChanged.emit("binance_ws", up),
+            on_history=self.historyLoaded.emit,
+            on_kline=self.klineUpdated.emit,
         )
         self._monitor = ConnectionMonitor(
             on_status=lambda name, up: self.connectionChanged.emit(name, up)
@@ -99,8 +104,14 @@ class BotEngine(QObject):
     # ------------------------------------------------------------------ API
 
     def start_monitors(self) -> None:
-        """Tumatakbo kahit STOPPED ang bot: connection status checks."""
+        """Tumatakbo kahit STOPPED ang bot: connection checks + LIVE CHART.
+
+        Ang Binance price feed ay laging bukas para gumagalaw ang chart
+        kahit hindi pa naka-START — ang START/STOP ay para lang sa
+        trading (strategy evaluation).
+        """
         self._monitor.start()
+        self._feed.start()
 
     def start(self) -> None:
         if self.state is BotState.RUNNING:
@@ -118,7 +129,7 @@ class BotEngine(QObject):
             self.modeChanged.emit("PAPER")
             self._restore_position()
 
-        self._feed.start()
+        self._feed.start()  # idempotent — tumatakbo na mula start_monitors
         self._coinbase.start()
         self.stateChanged.emit(self.state.value)
         self.log("INFO", f"Bot STARTED [{mode.upper()} MODE] — "
@@ -128,12 +139,13 @@ class BotEngine(QObject):
         if self.state is BotState.STOPPED:
             return
         self.state = BotState.STOPPED
-        await self._feed.stop()
+        # HINDI hinihinto ang _feed — tuloy ang live chart kahit STOPPED
         await self._coinbase.stop()
         if self._live_price_task is not None:
             self._live_price_task.cancel()
             self._live_price_task = None
         self.stateChanged.emit(self.state.value)
+        self.strategyStatus.emit("idle (press START BOT)")
         self.log("INFO", "Bot STOPPED")
 
     # ------------------------------------------------------------ live mode
@@ -203,6 +215,21 @@ class BotEngine(QObject):
             filelog.exception("Balance fetch failed:")
             self.log("WARN", f"Balance fetch failed: {e}")
 
+    def fetch_range_history(self, interval: str, limit: int) -> None:
+        """On-demand klines para sa Time filter (4H/1D/1W views)."""
+        try:
+            asyncio.create_task(self._fetch_range(interval, limit))
+        except RuntimeError:
+            pass  # walang running event loop (hal. sa UI tests)
+
+    async def _fetch_range(self, interval: str, limit: int) -> None:
+        try:
+            rows = await self._feed.fetch_klines(interval, limit)
+            self.rangeHistoryLoaded.emit(rows)
+        except Exception as e:
+            filelog.exception("Range history fetch failed:")
+            self.log("WARN", f"History fetch failed ({interval}): {e}")
+
     def _restore_position(self) -> None:
         """I-restore ang open position mula sa DB pagkatapos ng app restart."""
         position, level, message = decide_restore(
@@ -248,7 +275,10 @@ class BotEngine(QObject):
         if stretch is None:
             return
         self.stretchUpdated.emit(stretch)
-        self._evaluate_strategy(stretch)
+        # Chart/labels ay laging updated; ang TRADING lang ang naka-gate
+        # sa START — walang strategy evaluation habang STOPPED
+        if self.state is BotState.RUNNING:
+            self._evaluate_strategy(stretch)
 
     def _handle_daily_open(self, open_price: float) -> None:
         self.dailyOpenUpdated.emit(open_price)

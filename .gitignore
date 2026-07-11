@@ -6,5 +6,6 @@ details.txt
 step.txt
 .env
 build/
+/.claude/
 dist/
 *.spec
