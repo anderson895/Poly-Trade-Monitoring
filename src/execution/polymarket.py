@@ -149,9 +149,9 @@ def build_market_slugs(timeframe: str, now_utc: dt.datetime) -> list[str]:
         return [f"btc-updown-{timeframe}-{start}"]
 
     if timeframe == "1h":
-        import pytz  # dep ng pandas — laging available
+        from zoneinfo import ZoneInfo  # stdlib; sa Windows kailangan ng tzdata pkg
 
-        et = now_utc.astimezone(pytz.timezone("America/New_York"))
+        et = now_utc.astimezone(ZoneInfo("America/New_York"))
         hour12 = et.strftime("%I").lstrip("0")  # '9', '12' — walang zero
         ampm = et.strftime("%p").lower()        # 'am' / 'pm'
         return [

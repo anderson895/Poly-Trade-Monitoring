@@ -14,5 +14,5 @@ py-clob-client>=0.17
 # Candlestick chart (lazy-loaded kapag pinili ang "Candles" sa dashboard)
 finplot>=1.9
 
-# ET timezone para sa hourly Polymarket market slugs (dep din ng pandas)
-pytz>=2024.1
+# ET timezone data para sa hourly Polymarket market slugs (zoneinfo sa Windows)
+tzdata>=2024.1

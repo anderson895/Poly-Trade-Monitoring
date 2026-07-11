@@ -71,9 +71,9 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 
 ### Option B — Run from source (developers)
 ```powershell
-python -m venv venv
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe -m src.main    # or double-click run.bat
+python -m venv venv313   # Python 3.13
+.\venv313\Scripts\python.exe -m pip install -r requirements.txt
+.\venv313\Scripts\python.exe -m src.main    # or double-click run.bat
 ```
 
 Requirements: Windows 10/11, internet connection.
@@ -85,7 +85,7 @@ Requirements: Windows 10/11, internet connection.
 ### STEP 1 — Unit tests (offline, ~2 seconds)
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest tests\test_mean_reversion.py tests\test_filters.py tests\test_polymarket.py tests\test_netdns.py tests\test_resume.py tests\test_paper_e2e.py -v
+.\venv313\Scripts\python.exe -m pytest tests\test_mean_reversion.py tests\test_filters.py tests\test_polymarket.py tests\test_netdns.py tests\test_resume.py tests\test_paper_e2e.py -v
 ```
 
 **Expected: 61 passed.** Coverage:
@@ -102,10 +102,10 @@ Requirements: Windows 10/11, internet connection.
 ### STEP 2 — Smoke tests (require internet)
 
 ```powershell
-.\venv\Scripts\python.exe -m tests.smoke_phase1      # DB + Binance REST/WS + status endpoints
-.\venv\Scripts\python.exe -m tests.smoke_volumes     # live hourly-volume filter check
-.\venv\Scripts\python.exe -m tests.check_polymarket  # Polymarket endpoint reachability
-.\venv\Scripts\python.exe -m tests.verify_live_creds # credential check (read-only, no orders)
+.\venv313\Scripts\python.exe -m tests.smoke_phase1      # DB + Binance REST/WS + status endpoints
+.\venv313\Scripts\python.exe -m tests.smoke_volumes     # live hourly-volume filter check
+.\venv313\Scripts\python.exe -m tests.check_polymarket  # Polymarket endpoint reachability
+.\venv313\Scripts\python.exe -m tests.verify_live_creds # credential check (read-only, no orders)
 ```
 
 ### STEP 3 — Open the app and verify the UI
@@ -135,7 +135,7 @@ Requirements: Windows 10/11, internet connection.
 ### STEP 6 — Buy/sell logic check (any time, no waiting)
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest tests\test_paper_e2e.py -v
+.\venv313\Scripts\python.exe -m pytest tests\test_paper_e2e.py -v
 ```
 
 Simulates a full trading day through the real engine: entry gating, a BUY at ~20¢, holding, a SELL at the +100% profit target with correct PnL, a stop-loss cycle, and the one-trade-per-day limit. **Expected: 3 passed.**
@@ -180,7 +180,7 @@ Output: **`dist/PolyTradePro/`** (~200 MB). Delete `dist/PolyTradePro/data` (tes
 | Problem | Solution |
 |---|---|
 | Polymarket card shows Disconnected | Some ISPs DNS-poison `*.polymarket.com`. The app ships a built-in DoH resolver (`src/core/netdns.py`) that bypasses this. Run `tests.check_polymarket` to inspect reachability |
-| App won't open | Run from a terminal to see the error: `.\venv\Scripts\python.exe -m src.main` |
+| App won't open | Run from a terminal to see the error: `.\venv313\Scripts\python.exe -m src.main` |
 | Runtime errors | Check **`data\app.log`** — every error is logged there with a full traceback (attach it when reporting issues) |
 | Bot is RUNNING but never trades | Read the strategy status line under the chart — it states exactly what it's waiting for (entry window, stretch, share price, or an active death-trap veto) |
 | `BLOCKED — volume escalating…` | Intentional: the volume death-trap guard is refusing momentum days |

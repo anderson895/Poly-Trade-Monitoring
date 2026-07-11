@@ -153,7 +153,8 @@ def evaluate_entry(
             reason=f"waiting for entry window ({window})",
         )
     if hrs > cfg.entry_end_hour:
-        return Signal(Action.NONE, reason="entry window closed for today")
+        scope = "today" if cfg.period_hours >= 24 else "this period"
+        return Signal(Action.NONE, reason=f"entry window closed for {scope}")
 
     abs_stretch = abs(stretch_pct)
     if abs_stretch < cfg.min_stretch_pct:
