@@ -157,14 +157,24 @@ class SettingsPage(QWidget):
         )
         funder_lab = add_field("Funder / Proxy Address", self._pm_funder)
 
-        # Paano nag-sign up sa Polymarket — nagdidikta ng signature_type
-        # (1 = email/Magic, 2 = MetaMask/browser wallet)
+        # Uri ng Polymarket wallet — nagdidikta ng signature_type
+        # (1 = email/Magic proxy, 2 = MetaMask/browser wallet,
+        #  3 = Deposit Wallet — mga account na ginawa pagkatapos ng
+        #  CLOB V2 migration, Abril 2026; ang Funder ay ang "Address
+        #  (For API use only)" sa polymarket.com Settings)
+        self._sig_types = [
+            ("Email / Google (Magic) — old account", "1"),
+            ("MetaMask / browser wallet", "2"),
+            ("Deposit Wallet (accounts after Apr 2026)", "3"),
+        ]
         self._wallet_type = QComboBox()
-        self._wallet_type.addItems(["Email / Google (Magic)", "MetaMask / browser wallet"])
+        self._wallet_type.addItems([label for label, _ in self._sig_types])
+        saved_sig = str(g("pm_signature_type", "1"))
         self._wallet_type.setCurrentIndex(
-            1 if str(g("pm_signature_type", "1")) == "2" else 0
+            next((i for i, (_, v) in enumerate(self._sig_types)
+                  if v == saved_sig), 0)
         )
-        wallet_lab = add_field("Polymarket Sign-up Method", self._wallet_type)
+        wallet_lab = add_field("Polymarket Wallet Type", self._wallet_type)
 
         # Mga field na para sa LIVE mode lang — itinatago sa Paper (demo)
         self._live_only = [
@@ -294,7 +304,8 @@ class SettingsPage(QWidget):
             "trading_mode", "live" if self._mode.currentIndex() == 1 else "paper"
         )
         self._db.set_setting(
-            "pm_signature_type", "2" if self._wallet_type.currentIndex() == 1 else "1"
+            "pm_signature_type",
+            self._sig_types[self._wallet_type.currentIndex()][1],
         )
         self._db.set_setting(
             "market_timeframe",
@@ -334,7 +345,7 @@ class SettingsPage(QWidget):
         funder = secrets.get_secret(secrets.KEY_PM_FUNDER)
         if not pk or not funder:
             return  # wala pang creds — walang ive-verify
-        sig_type = 2 if self._wallet_type.currentIndex() == 1 else 1
+        sig_type = int(self._sig_types[self._wallet_type.currentIndex()][1])
 
         def _check() -> float:
             from src.execution.polymarket import PolymarketClient

@@ -61,10 +61,11 @@ class PolymarketClient:
         self,
         private_key: str,
         funder: str,
-        signature_type: int = 1,  # 1 = email/Magic signup, 2 = MetaMask
+        signature_type: int = 1,  # 1 = Magic, 2 = MetaMask, 3 = Deposit Wallet
         host: str = CLOB_HOST,
         clob_client: Optional[ClobClient] = None,  # injectable para sa tests
     ) -> None:
+        self._sig_type = signature_type
         self._client = clob_client or ClobClient(
             host=host,
             key=private_key,
@@ -83,10 +84,21 @@ class PolymarketClient:
     # ------------------------------------------------------------- balance
 
     def get_usdc_balance(self) -> float:
-        """Totoong USDC balance (collateral) sa Polymarket."""
-        resp = self._client.get_balance_allowance(
-            BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-        )
+        """Totoong USDC balance (collateral) sa Polymarket.
+
+        Sa Deposit Wallet accounts (sig type 3), KAILANGANG ipasa ang
+        signature_type sa balance request — kung hindi, sa lumang-style
+        na account hahanapin ng server ang pondo at 0.00 ang babalik.
+        Sa sig 1/2, default (-1) pa rin: hinahayaang mag-resolve ang
+        server base sa account mapping (ito ang gumagana sa Magic).
+        """
+        if self._sig_type == 3:
+            params = BalanceAllowanceParams(
+                asset_type=AssetType.COLLATERAL, signature_type=3
+            )
+        else:
+            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+        resp = self._client.get_balance_allowance(params)
         raw = resp.get("balance", "0") if isinstance(resp, dict) else "0"
         return int(raw) / 10**USDC_DECIMALS
 

@@ -47,6 +47,22 @@ class TestPolymarketClient(unittest.TestCase):
         clob = MagicMock()
         clob.get_balance_allowance.return_value = {"balance": "250000000"}
         self.assertEqual(make_client(clob).get_usdc_balance(), 250.0)
+        # Sig 1 (default): WALANG explicit signature_type sa request
+        params = clob.get_balance_allowance.call_args[0][0]
+        self.assertEqual(params.signature_type, -1)
+
+    def test_usdc_balance_deposit_wallet_passes_sig_type(self) -> None:
+        # Deposit Wallet accounts (sig 3): dapat KASAMA ang signature_type
+        # sa balance request — kung hindi, 0.00 ang ibabalik ng server
+        clob = MagicMock()
+        clob.get_balance_allowance.return_value = {"balance": "96580000"}
+        client = PolymarketClient(
+            private_key="0xfake", funder="0xdeposit",
+            signature_type=3, clob_client=clob,
+        )
+        self.assertAlmostEqual(client.get_usdc_balance(), 96.58)
+        params = clob.get_balance_allowance.call_args[0][0]
+        self.assertEqual(params.signature_type, 3)
 
     def test_best_prices_from_order_book(self) -> None:
         # CLOB V2: dict ang order book response

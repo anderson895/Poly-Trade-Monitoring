@@ -91,10 +91,19 @@ def main() -> None:
     conn.close()
     sig_type = int(row[0]) if row else 1
 
+    # Optional overrides:  python -m tests.live_e2e_order [funder] [sig_type]
+    # (hal. ang deposit wallet address mula sa polymarket.com Settings
+    #  "For API use only" + sig type 3)
+    if len(sys.argv) > 1:
+        funder = sys.argv[1]
+    if len(sys.argv) > 2:
+        sig_type = int(sys.argv[2])
+
     client = PolymarketClient(pk, funder, signature_type=sig_type)
     client.connect()
     usdc_before = client.get_usdc_balance()
-    print(f"Konektado. USDC balance: {usdc_before:.2f}")
+    print(f"Konektado (funder={funder[:10]}…, sig_type={sig_type}). "
+          f"USDC balance: {usdc_before:.2f}")
 
     market = find_btc_market("15m", now)
     print(f"Market: {market.question}")
