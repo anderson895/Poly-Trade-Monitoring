@@ -186,6 +186,24 @@ class BottomBar(QFrame):
         market_col.addWidget(market_title)
         market_col.addWidget(self.market_label)
 
+        tf_title = QLabel("Timeframe")
+        tf_title.setProperty("muted", True)
+        self.timeframe_label = QLabel("Daily")
+        self.timeframe_label.setStyleSheet("font-weight: bold")
+        tf_col = QVBoxLayout()
+        tf_col.setSpacing(1)
+        tf_col.addWidget(tf_title)
+        tf_col.addWidget(self.timeframe_label)
+
+        risk_title = QLabel("Risk / Trade")
+        risk_title.setProperty("muted", True)
+        self.risk_label = QLabel("—")
+        self.risk_label.setStyleSheet("font-weight: bold")
+        risk_col = QVBoxLayout()
+        risk_col.setSpacing(1)
+        risk_col.addWidget(risk_title)
+        risk_col.addWidget(self.risk_label)
+
         self.start_btn = QPushButton("  START BOT")
         self.start_btn.setObjectName("startBtn")
         self.start_btn.setIcon(qta.icon("fa6s.play", color="white"))
@@ -208,6 +226,10 @@ class BottomBar(QFrame):
         row.addLayout(strat_col)
         row.addSpacing(24)
         row.addLayout(market_col)
+        row.addSpacing(24)
+        row.addLayout(tf_col)
+        row.addSpacing(24)
+        row.addLayout(risk_col)
         row.addStretch()
         row.addWidget(self.start_btn)
         row.addSpacing(8)
@@ -364,6 +386,9 @@ class MainWindow(QMainWindow):
         engine.logAdded.connect(self.logs.add_log)
         engine.logAdded.connect(self._on_log_alert)
 
+        # Unang lagay ng Timeframe/Risk labels mula sa saved settings
+        self._refresh_config_labels()
+
     def _apply_pointer_cursors(self, container: QWidget) -> None:
         """Hand cursor sa bawat button, dropdown, checkbox, at nav item.
         Hinaharangan din ang mouse-wheel sa spinboxes/dropdowns para
@@ -435,9 +460,20 @@ class MainWindow(QMainWindow):
         else:
             self._uptime_timer.stop()
 
+    TF_LABELS = {"daily": "Daily", "4h": "4 Hours",
+                 "1h": "1 Hour", "15m": "15 Minutes"}
+
     def _on_mode(self, mode: str) -> None:
         self.dash.set_mode(mode)
         self.bottom.market_label.setText(f"BTC (Binance) → Polymarket [{mode}]")
+        self._refresh_config_labels()
+
+    def _refresh_config_labels(self) -> None:
+        """Timeframe + Risk sa bottom bar — mula sa saved settings."""
+        tf = str(self._db.get_setting("market_timeframe", "daily"))
+        self.bottom.timeframe_label.setText(self.TF_LABELS.get(tf, tf))
+        risk = float(self._db.get_setting("risk_usdc", 200.0))
+        self.bottom.risk_label.setText(f"{risk:,.2f} USDC")
 
     def _on_log_alert(self, level: str, message: str) -> None:
         if level == "ERROR":
