@@ -225,6 +225,12 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 - **v1.0.0** — unang release: buong Paper/Live bot, dark UI, packaged exe
 - **v1.1.0** — **Market Timeframe selector** (Daily/4H/1H/15M) na may
   auto-scaled strategy at live market rollover (tingnan ang Section 4)
+- **v1.2.0** (2026-07-13) — **live trading fully verified sa totoong pera**:
+  CLOB V2 migration (`py-clob-client-v2`), Deposit Wallet support (sig
+  type 3 + tamang balance lookup), tanghali-ET daily anchor correction,
+  Watching-reason logs, Timeframe/Risk sa bottom bar, live E2E order
+  test + historical backtest tools; kasama ang unang autonomous live
+  trade ng bot
 
 **Mga feature na naidagdag lampas sa orihinal na plano:**
 - [x] Trading-app style chart: line + candlestick w/ volume (finplot),

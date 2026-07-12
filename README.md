@@ -9,7 +9,8 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 ## Features
 
 - 📈 **Live BTC chart** — line and candlestick views with volume bars, Binance-style time filters (1s · 15m · 1H · 4H · 1D · 1W · YTD · All), hover crosshair with exact price/time, auto-follow, and 2-hour history prefill on launch
-- 🤖 **Automated strategy** — daily-open anchor, 1.5%–2.5% stretch entry window (4–12h UTC), 15¢–25¢ share price gate, profit target / stop loss / end-of-day exits, one trade per day
+- 🤖 **Automated strategy** — 1.5%–2.5% stretch entry inside the 4–12h window of the market period, 15¢–25¢ share price gate, profit target / stop loss / end-of-period exits, one trade per market period. The daily market is anchored to **12:00 PM ET** (its real settlement anchor), not 00:00 UTC
+- ⏱️ **Market Timeframes** — Daily / 4H / 1H / 15M Polymarket markets, with strategy timings and stretch thresholds auto-scaled per timeframe and automatic market rollover each period
 - 🛡️ **"Death trap" filters** — volume escalation veto, Coinbase premium veto, and a manual Economic Data Day block
 - 📊 **Full dashboard** — connection status (Internet / Binance / Polymarket), bot status, live balance, trades table, statistics (win rate, PnL), and logs
 - 🔐 **Secure secrets** — private keys stored in Windows Credential Manager, never in files; credential verification on save
@@ -23,7 +24,7 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 ### Core
 | Technology | Purpose |
 |---|---|
-| **Python 3.13** (runtime/build) / 3.10 (dev venv) | Application language |
+| **Python 3.13** | Application language (single venv for dev and build) |
 | **PySide6 (Qt 6)** | Desktop UI framework (official Qt for Python) |
 | **qasync** | Bridges the Qt event loop with `asyncio` so WebSockets and UI run on one loop |
 | **SQLite** (built-in `sqlite3`) | Local storage for trades, logs, and settings |
@@ -47,11 +48,11 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 ### Web3 / Blockchain
 | Technology | Purpose |
 |---|---|
-| **py-clob-client** | Official Polymarket CLOB client — order signing and placement |
+| **py-clob-client-v2** | Official Polymarket CLOB V2 client — order signing and placement (the V2 exchange, live since Apr 2026, rejects the legacy client). Supports Magic proxy, MetaMask, and Deposit Wallet accounts |
 | **Polygon network** | The Ethereum L2 where Polymarket markets and USDC live |
 | **USDC** | Settlement currency (ERC-20 stablecoin) |
 | **Cryptographic order signing** | Orders are signed with the user's wallet private key (EIP-712 style); API credentials are derived from the key — no username/password |
-| **Polymarket Gamma API** | Daily BTC Up/Down market discovery |
+| **Polymarket Gamma API** | BTC Up/Down market discovery for every timeframe (daily markets are named by their noon-ET settlement date; 15m/4h by UTC period start; 1h by ET hour) |
 
 ### Security & Packaging
 | Technology | Purpose |
@@ -65,7 +66,7 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 ## Getting Started
 
 ### Option A — Download the release (end users)
-1. Download `PolyTradePro-v1.0.0.zip` from the [Releases page](https://github.com/anderson895/Poly-Trade-Monitoring/releases)
+1. Download the latest `PolyTradePro-vX.Y.Z.zip` from the [Releases page](https://github.com/anderson895/Poly-Trade-Monitoring/releases)
 2. Extract the folder and run `PolyTradePro.exe` inside
 3. The app starts in **Paper mode** (no real money). See `step.txt` for the Live-mode setup guide
 
@@ -85,18 +86,19 @@ Requirements: Windows 10/11, internet connection.
 ### STEP 1 — Unit tests (offline, ~2 seconds)
 
 ```powershell
-.\venv\Scripts\python.exe -m pytest tests\test_mean_reversion.py tests\test_filters.py tests\test_polymarket.py tests\test_netdns.py tests\test_resume.py tests\test_paper_e2e.py -v
+.\venv\Scripts\python.exe -m pytest tests -v
 ```
 
-**Expected: 61 passed.** Coverage:
+**Expected: 84 passed.** Coverage:
 
 | Test file | What it verifies |
 |---|---|
-| `test_mean_reversion.py` | Entry/exit rules: entry window (4–12h UTC), stretch band, share price gate, profit target, stop loss, EOD exit |
+| `test_mean_reversion.py` | Entry/exit rules: entry window (4–12h into the period), stretch band, share price gate, profit target, stop loss, end-of-period exit |
+| `test_timeframes.py` | Per-timeframe scaling, period anchors (daily = noon ET, DST-aware), market slug builders |
 | `test_filters.py` | Death-trap guards: volume escalation and Coinbase premium vetoes |
-| `test_polymarket.py` | Market discovery (slug patterns) and live executor logic |
+| `test_polymarket.py` | Market discovery (slug patterns) and live executor logic (CLOB V2) |
 | `test_netdns.py` | The DoH resolver (ISP DNS-poisoning bypass) |
-| `test_resume.py` | Position resume after restart (restore / stale / mode-mismatch rules) |
+| `test_resume.py` | Position resume after restart (restore / stale-period / mode-mismatch rules) |
 | `test_paper_e2e.py` | **Full engine buy→sell simulation** — pump → BUY at ~20¢ → reversion → SELL at profit target, plus stop-loss and trade-limit cycles |
 
 ### STEP 2 — Smoke tests (require internet)
@@ -118,9 +120,9 @@ Requirements: Windows 10/11, internet connection.
 ### STEP 4 — Settings
 
 1. **Risk Per Trade** defaults to 200 USDC
-2. In **Live** mode the form shows Private Key / Funder Address / Sign-up Method; in **Paper** mode those are hidden
+2. In **Live** mode the form shows Private Key / Funder Address / Wallet Type; in **Paper** mode those are hidden
 3. Saving triggers an automatic **credential verification** with the result (and live balance) shown inline, and the dashboard balance card updates immediately — no START needed
-4. **Reset** restores strategy defaults only; it does not touch Trading Mode or Sign-up Method
+4. **Reset** restores strategy defaults only; it does not touch Trading Mode or Wallet Type
 
 ### STEP 5 — Paper run
 
@@ -128,9 +130,11 @@ Requirements: Windows 10/11, internet connection.
 2. Verify: status RUNNING, uptime counting, strategy status line updating (e.g., `WATCHING — stretch +0.12% < 1.5% minimum`)
 3. **STOP BOT** returns to STOPPED; the chart keeps streaming
 
-> The bot trades rarely by design — entries require a genuine ~1.7–2.3% move
-> from the daily open inside the 4–12h UTC window. A day with no trades is
-> normal, not a bug.
+> The bot trades rarely by design — entries require a genuine stretch from
+> the period strike inside the entry window (on Daily: ~1.7–2.3% within
+> 4–12h after noon ET; scaled down on shorter timeframes). A day with no
+> trades is normal, not a bug — the Recent Logs show exactly which
+> condition is not met (`Watching: stretch +0.05% < 0.153% minimum`).
 
 ### STEP 6 — Buy/sell logic check (any time, no waiting)
 
@@ -142,11 +146,15 @@ Simulates a full trading day through the real engine: entry gating, a BUY at ~20
 
 ### STEP 7 — Live mode (REAL money — start small)
 
-1. Settings → **Live**, paste the Polymarket **Private Key** and **Funder Address**, pick the **Sign-up Method**, set **Risk to 5–10 USDC** for the first run → Save
-2. The inline check should report the credentials as valid along with your USDC balance
-3. **START BOT** → expect `LIVE mode ready — market: Bitcoin Up or Down on <date>` and your real balance on the dashboard
+1. Settings → **Live**, paste the Polymarket **Private Key** and **Funder Address**, pick the **Wallet Type**, set **Risk to 5–10 USDC** for the first run → Save
+   - **Accounts created after April 2026** are Deposit Wallet accounts: pick *"Deposit Wallet (accounts after Apr 2026)"* and use the **"Address (For API use only)"** shown in your polymarket.com settings as the Funder Address. The account must have completed at least one trade on the website (this deploys the wallet and its approvals).
+   - Older accounts: *Email/Google (Magic)* or *MetaMask* with the classic proxy address.
+2. The inline check should report the credentials as valid along with your USDC balance — if it shows **0.00** while you have funds, the Funder Address or Wallet Type is wrong
+3. **START BOT** → expect `LIVE mode ready — market: Bitcoin Up or Down ...` and your real balance on the dashboard
 4. If anything fails, the bot automatically falls back to Paper mode with a red alert — it will never spend money silently
 5. After the first live trade, cross-check the order and PnL against polymarket.com → Portfolio
+
+> **Optional plumbing check before waiting for a real setup:** `.\venv\Scripts\python.exe -m tests.live_e2e_order` places a tiny (~$3) real BUY and sells it back immediately (with a confirmation prompt) to verify the whole order path — expected cost is just the spread (~$0.05–0.30).
 
 ---
 
