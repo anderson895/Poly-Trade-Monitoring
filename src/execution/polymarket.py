@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 from typing import Optional
 from zoneinfo import ZoneInfo  # stdlib; sa Windows kailangan ng tzdata pkg
 
@@ -36,6 +37,25 @@ CLOB_HOST = "https://clob.polymarket.com"
 GAMMA_API = "https://gamma-api.polymarket.com"
 POLYGON_CHAIN_ID = 137
 USDC_DECIMALS = 6
+
+
+class _ExpectedAuthNoiseFilter(logging.Filter):
+    """Itago ang inaasahang 400 sa /auth/api-key.
+
+    Ang create_or_derive_api_key ay SINASADYANG sumusubok munang gumawa
+    ng bagong key; kapag mayroon na, 400 ("Could not create api key")
+    tapos nagde-derive na lang ng existing. Normal na fallback iyon —
+    pero nilo-log ito ng SDK bilang ERROR at nakakagulat sa app.log.
+    Ang ibang totoong errors (hal. order rejections) ay dumadaan pa rin.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Could not create api key" not in record.getMessage()
+
+
+logging.getLogger("py_clob_client_v2.http_helpers.helpers").addFilter(
+    _ExpectedAuthNoiseFilter()
+)
 
 
 class PolymarketError(Exception):
