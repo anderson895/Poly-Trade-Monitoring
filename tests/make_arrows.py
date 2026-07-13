@@ -38,4 +38,11 @@ d.line([(6, 9), (S // 2, 16)], fill=COLOR, width=T)
 d.line([(S // 2, 16), (S - 6, 9)], fill=COLOR, width=T)
 img.save(ASSETS / "chevron_down.png")
 
-print("[OK] assets/plus.png, minus.png, chevron_down.png created")
+# CHECK (para sa naka-check na QCheckBox indicator — puti sa accent bg)
+img, d = canvas()
+WHITE = (255, 255, 255, 255)
+d.line([(5, 13), (10, 18)], fill=WHITE, width=T)   # maikling paa
+d.line([(10, 18), (19, 6)], fill=WHITE, width=T)   # mahabang paa
+img.save(ASSETS / "check.png")
+
+print("[OK] assets/plus.png, minus.png, chevron_down.png, check.png created")

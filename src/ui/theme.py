@@ -6,6 +6,7 @@ from src.core.paths import resource_path
 _PLUS = resource_path("assets/plus.png").as_posix()
 _MINUS = resource_path("assets/minus.png").as_posix()
 _CHEVRON = resource_path("assets/chevron_down.png").as_posix()
+_CHECK = resource_path("assets/check.png").as_posix()
 
 # Palette
 BG = "#0b0f1a"
@@ -192,13 +193,17 @@ QListWidget {{ background: {CARD}; border: none; border-radius: 8px; }}
 QToolButton {{ background: transparent; border: none; color: {MUTED}; font-size: 14px; }}
 QToolButton:hover {{ color: {TEXT}; }}
 
-QCheckBox {{ spacing: 8px; }}
+QCheckBox {{ spacing: 8px; padding: 2px 0; }}
 QCheckBox::indicator {{
     width: 16px; height: 16px;
     border: 1px solid {BORDER}; border-radius: 4px;
     background: {INPUT_BG};
 }}
-QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
+QCheckBox::indicator:hover {{ border-color: {ACCENT}; }}
+QCheckBox::indicator:checked {{
+    background: {ACCENT}; border-color: {ACCENT};
+    image: url("{_CHECK}");
+}}
 
 QScrollBar:vertical {{
     background: {BG}; width: 10px; border-radius: 5px;

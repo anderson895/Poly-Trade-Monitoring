@@ -219,7 +219,10 @@ class SettingsPage(QWidget):
         self._econ_day.setChecked(
             g("econ_block_date") == dt.datetime.now(dt.timezone.utc).date().isoformat()
         )
+        self._econ_day.setContentsMargins(2, 0, 2, 0)
+        form.addSpacing(8)  # breathing room mula sa spinbox sa itaas
         form.addWidget(self._econ_day)
+        form.addSpacing(4)
 
         self._paper_start = _spin(
             float(g("paper_start_usdc", DEFAULTS["paper_start_usdc"])), "USDC"
