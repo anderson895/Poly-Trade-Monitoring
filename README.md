@@ -5,7 +5,6 @@ A Windows desktop trading bot for Polymarket's **daily BTC Up/Down markets**, po
 Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real USDC on Polymarket).
 
 ---
-
 ## Features
 
 - 📈 **Live BTC chart** — line and candlestick views with volume bars, Binance-style time filters (1s · 15m · 1H · 4H · 1D · 1W · YTD · All), hover crosshair with exact price/time, auto-follow, and 2-hour history prefill on launch
