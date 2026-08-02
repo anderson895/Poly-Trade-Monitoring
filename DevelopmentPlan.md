@@ -214,7 +214,7 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 - [x] ~~Reconnect/resume logic~~ ✅ DONE (2026-07-11, updated 2026-07-12) — WebSocket auto-reconnect (dati na); **position resume sa app restart**: naka-persist ang open position sa SQLite, nire-restore sa START kung same MARKET PERIOD + same mode (period-based sa lahat ng timeframes; ang daily ay tanghali-ET anchored); stale (lumang period) = discarded na may WARN; naiwang LIVE position habang PAPER mode = malakas na ERROR alert (`tests/test_resume.py`)
 - [x] ~~Death-trap filter: volume escalation detection~~ ✅ DONE (2026-07-11) — hourly Binance volumes, recent 3h avg vs prior 20h baseline, blocks entry kapag ≥2× (configurable sa Settings); 7 unit tests
 - [x] ~~Death-trap filter: economic calendar toggle~~ ✅ DONE (2026-07-11) — manual checkbox sa Settings, naka-store ang petsa kaya auto-expire kinabukasan
-- [x] ~~Death-trap filter: Coinbase premium check~~ ✅ DONE (2026-07-11) — Coinbase spot vs Binance kada 60s, direction-aware veto sa ±0.15% (configurable); fail-open kung walang Coinbase data
+- [x] ~~Death-trap filter: Coinbase premium check~~ ✅ DONE (2026-07-11) — Coinbase spot vs Binance kada 60s, direction-aware veto sa ±0.15% (configurable); fail-open kung walang Coinbase data. **Hindi aktibo kapag Coinbase ang market data source** (v1.3.0)
 - [x] ~~Error handling + alerting sa UI~~ ✅ DONE (2026-07-11) — dismissible red alert banner sa main window tuwing ERROR (failed BUY/SELL orders ay naka-wrap na sa try/except at nagla-log ng ERROR); full tracebacks pa rin sa `data/app.log`
 - [x] ~~PyInstaller packaging~~ ✅ DONE (2026-07-11) — **onedir** `dist/PolyTradePro/` (mas mabilis magbukas kaysa onefile), build gamit ang **Python 3.13 venv** (dating `venv313`, na-rename na sa `venv` 2026-07-12); ang `data/` ay sa tabi ng exe via `src/core/paths.py`; buong build command at gotchas sa README
 - [x] ~~End-to-end testing sa maliit na real USDC amount~~ ✅ **DONE (2026-07-12)** — buong BUY→fill→SELL→fill round trip sa totoong Polymarket CLOB via `tests/live_e2e_order.py` (~$3 order, $0.28 gastos). **UNANG AUTONOMOUS LIVE TRADE: 2026-07-12 22:49** — ang bot mismo ang nag-detect ng setup (stretch +0.16%, DOWN @ 17¢), bumili ng $5, at nag-stop loss nang tama (-53%, recorded -$2.65; aktwal na ~-$1.24 dahil mas maganda ang totoong fills kaysa sa limit floor). Kumpleto at napatunayan na ang buong autonomous pipeline. *Known minor gap: ang recorded PnL ay batay sa limit price, hindi sa aktwal na fill prices*
@@ -231,6 +231,11 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
   Watching-reason logs, Timeframe/Risk sa bottom bar, live E2E order
   test + historical backtest tools; kasama ang unang autonomous live
   trade ng bot
+- **v1.3.0** (2026-08-02) — **Coinbase market data source + auto-fallback**:
+  hina-harang ng Binance ang mga US IP (HTTP 451), kaya hindi kumokonekta
+  ang feed sa US-based VPS at hindi gumagana ang bot doon. Bagong
+  `CoinbaseMarketFeed` (drop-in ng `BinanceFeed`) at `Auto` na source
+  selection na nagpo-probe sa Binance sa launch. 104 unit tests
 
 **Mga feature na naidagdag lampas sa orihinal na plano:**
 - [x] Trading-app style chart: line + candlestick w/ volume (finplot),
@@ -254,6 +259,33 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 - [x] "Watching:" strategy-reason logging sa Recent Logs (deduped, hindi
       nag-i-spam) — kita na kung BAKIT hindi pumapasok ang bot
 - [x] Save Settings button = accent color (primary action)
+
+**Coinbase data source (2026-08-02, v1.3.0):**
+- [x] **Bagong `src/feed/coinbase_market.py`** — `CoinbaseMarketFeed`,
+      drop-in ng `BinanceFeed` (parehong ctor at public API). Tatlong gap
+      ng Coinbase ang inayos: (a) walang kline stream ang WS, kaya ang 1m
+      candles ay binubuo mula sa `ticker` ticks gamit ang oras ng exchange
+      (hindi lokal na orasan — safe sa clock skew ng VPS); (b) walang 4h at
+      1w granularity, ini-aggregate mula sa 1h/1d, Lunes-anchored ang
+      weekly gaya ng Binance; (c) 300-candle cap kada request, pina-page
+- [x] **`src/feed/source.py`** — `Auto`/`Binance`/`Coinbase` selection.
+      Pinu-probe ng `Auto` ang Binance sa launch at lumilipat mag-isa sa
+      Coinbase kapag 451/unreachable. Bagong dropdown sa Settings
+- [x] Source-aware ang connection card, chart title, bottom bar, at ang
+      health-check URL ng `ConnectionMonitor`
+- [x] **Coinbase premium filter ay hindi aktibo kapag Coinbase na rin ang
+      price feed** — Coinbase-vs-Coinbase = laging 0%, kaya nilalaktawan
+      at nila-log, imbes na mag-report ng veto na hindi naman ginagawa
+- [x] 20 bagong unit tests (**104 total**)
+
+**⚠️ Kilalang trade-off:** nag-se-settle ang Polymarket sa Binance BTCUSDT.
+Ilang dolyar lang ang layo ng Coinbase BTC-USD, pero hindi eksakto ang
+"Price to Beat" kapag Coinbase ang source. Non-US VPS pa rin ang mas tama
+kung may pagpipilian.
+
+**Natitirang gap:** naka-hardcode pa rin sa Binance REST ang
+`tests/backtest_daily.py`, `_scan_15m_setups.py`, `smoke_phase1.py`, at
+`smoke_volumes.py` — masisira ang mga ito kapag pinatakbo sa US VPS.
 
 ---
 

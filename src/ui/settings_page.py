@@ -145,6 +145,34 @@ class SettingsPage(QWidget):
         tf_note.setWordWrap(True)
         form.addWidget(tf_note)
 
+        # --- Market data source ---------------------------------------------
+        # Hina-harang ng Binance ang mga US IP (HTTP 451), kaya kailangan ng
+        # kapalit kapag US-based VPS ang pinagpapatakbuhan
+        self._sources = [
+            ("Auto — Binance, Coinbase kung blocked", "auto"),
+            ("Binance (BTCUSDT)", "binance"),
+            ("Coinbase (BTC-USD)", "coinbase"),
+        ]
+        self._data_source = QComboBox()
+        self._data_source.addItems([label for label, _ in self._sources])
+        saved_src = str(g("market_data_source", "auto"))
+        self._data_source.setCurrentIndex(next(
+            (i for i, (_, v) in enumerate(self._sources) if v == saved_src), 0
+        ))
+        add_field("Market Data Source (BTC price feed)", self._data_source)
+
+        src_note = QLabel(
+            "Polymarket settles its daily BTC market on Binance BTCUSDT, so "
+            "Binance is the accurate source. Coinbase BTC-USD normally trades "
+            "within a few dollars of it, but the \"Price to Beat\" will differ "
+            "slightly. Use Coinbase only where Binance is unreachable — for "
+            "example a US-based VPS, which Binance blocks with HTTP 451. "
+            "Takes effect on restart."
+        )
+        src_note.setProperty("muted", True)
+        src_note.setWordWrap(True)
+        form.addWidget(src_note)
+
         # --- Secrets (para sa LIVE mode lang — nakatago sa Paper) ----------
         # Walang Binance API key field — public data lang ang binabasa
         # ng app (charts/klines), hindi kailangan ng key
@@ -313,6 +341,10 @@ class SettingsPage(QWidget):
         self._db.set_setting(
             "market_timeframe",
             self._timeframes[self._timeframe.currentIndex()][1],
+        )
+        self._db.set_setting(
+            "market_data_source",
+            self._sources[self._data_source.currentIndex()][1],
         )
         self._db.set_setting("risk_usdc", self._risk.value())
         self._db.set_setting("min_stretch_pct", self._min_stretch.value())

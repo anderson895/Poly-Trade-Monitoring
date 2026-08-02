@@ -1,6 +1,6 @@
 # PolyTrade Pro — Polymarket Trading Bot
 
-A Windows desktop trading bot for Polymarket's **daily BTC Up/Down markets**, powered by a **Mean Reversion ("Rubber Band")** strategy. Binance provides the read-only BTC price feed; trades execute on Polymarket's on-chain order book (Polygon network).
+A Windows desktop trading bot for Polymarket's **daily BTC Up/Down markets**, powered by a **Mean Reversion ("Rubber Band")** strategy. Binance provides the read-only BTC price feed, with Coinbase as an automatic fallback where Binance is geo-blocked; trades execute on Polymarket's on-chain order book (Polygon network).
 
 Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real USDC on Polymarket).
 
@@ -10,8 +10,9 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 - 📈 **Live BTC chart** — line and candlestick views with volume bars, Binance-style time filters (1s · 15m · 1H · 4H · 1D · 1W · YTD · All), hover crosshair with exact price/time, auto-follow, and 2-hour history prefill on launch
 - 🤖 **Automated strategy** — 1.5%–2.5% stretch entry inside the 4–12h window of the market period, 15¢–25¢ share price gate, profit target / stop loss / end-of-period exits, one trade per market period. The daily market is anchored to **12:00 PM ET** (its real settlement anchor), not 00:00 UTC
 - ⏱️ **Market Timeframes** — Daily / 4H / 1H / 15M Polymarket markets, with strategy timings and stretch thresholds auto-scaled per timeframe and automatic market rollover each period
-- 🛡️ **"Death trap" filters** — volume escalation veto, Coinbase premium veto, and a manual Economic Data Day block
-- 📊 **Full dashboard** — connection status (Internet / Binance / Polymarket), bot status, live balance, trades table, statistics (win rate, PnL), and logs
+- 🛡️ **"Death trap" filters** — volume escalation veto, Coinbase premium veto (inactive when Coinbase is itself the price feed), and a manual Economic Data Day block
+- 🌐 **Selectable data source** — Binance BTCUSDT by default, Coinbase BTC-USD where Binance is unreachable (it blocks US IPs with HTTP 451, which breaks the bot on a US-based VPS). `Auto` probes Binance on launch and falls back on its own
+- 📊 **Full dashboard** — connection status (Internet / BTC feed / Polymarket), bot status, live balance, trades table, statistics (win rate, PnL), and logs
 - 🔐 **Secure secrets** — private keys stored in Windows Credential Manager, never in files; credential verification on save
 - 🔁 **Resilience** — WebSocket auto-reconnect, position resume after restart, automatic fallback to Paper mode when Live setup fails, in-app DoH resolver that bypasses ISP DNS poisoning of Polymarket domains
 - 🖥️ **Polished UI** — dark theme, collapsible sidebar, error alert banner, pointer cursors, mode-aware settings form
@@ -39,8 +40,8 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 ### Networking & Data
 | Technology | Purpose |
 |---|---|
-| **websockets** | Binance combined stream (`miniTicker` + `kline_1m`) for live prices and candles |
-| **httpx** | Async REST calls (Binance klines/history, Polymarket Gamma API, connection checks) |
+| **websockets** | Binance combined stream (`miniTicker` + `kline_1m`), or the Coinbase `ticker` channel with 1m candles aggregated client-side |
+| **httpx** | Async REST calls (Binance/Coinbase klines + history, Polymarket Gamma API, connection checks) |
 | **truststore** | TLS verification via the native Windows certificate store |
 | **Custom DoH resolver** | DNS-over-HTTPS (Cloudflare/Google) scoped to `*.polymarket.com` — defeats ISP DNS poisoning by patching `socket.getaddrinfo` |
 
@@ -112,7 +113,7 @@ Requirements: Windows 10/11, internet connection.
 ### STEP 3 — Open the app and verify the UI
 
 1. The window opens maximized with the robot icon
-2. Within ~15 seconds all three status cards turn green: **Internet / Binance (BTC) / Polymarket**
+2. Within ~15 seconds all three status cards turn green: **Internet / Binance (BTC)** (or **Coinbase (BTC)** where Binance is blocked) **/ Polymarket**
 3. **Bot Status: STOPPED**, and the chart is already full (2-hour history prefill) and moving — the chart is live even before START
 4. Past trades and logs persist across restarts (SQLite)
 
@@ -122,6 +123,7 @@ Requirements: Windows 10/11, internet connection.
 2. In **Live** mode the form shows Private Key / Funder Address / Wallet Type; in **Paper** mode those are hidden
 3. Saving triggers an automatic **credential verification** with the result (and live balance) shown inline, and the dashboard balance card updates immediately — no START needed
 4. **Reset** restores strategy defaults only; it does not touch Trading Mode or Wallet Type
+5. **Market Data Source** picks the BTC price feed. Leave it on `Auto` unless you have a reason not to — it uses Binance when reachable and switches to Coinbase when it is not. See [Running on a VPS](#running-on-a-vps) before forcing Coinbase
 
 ### STEP 5 — Paper run
 
@@ -192,6 +194,32 @@ Output: **`dist/PolyTradePro/`** (~200 MB). Delete `dist/PolyTradePro/data` (tes
 | Bot is RUNNING but never trades | Read the strategy status line under the chart — it states exactly what it's waiting for (entry window, stretch, share price, or an active death-trap veto) |
 | `BLOCKED — volume escalating…` | Intentional: the volume death-trap guard is refusing momentum days |
 | Balance shows `…` in Live mode | Transient network hiccup; the balance loop retries every 10s and refreshes every 60s |
+| BTC card red, chart empty, `HTTP 451` in the log | Binance blocks this IP. See [Running on a VPS](#running-on-a-vps) |
+
+---
+
+## Running on a VPS
+
+Binance blocks US IP addresses with **HTTP 451**, so on a US-based VPS the
+Binance feed never connects and the bot cannot see a price at all. On
+`Auto` (the default) the app probes Binance at launch and switches to the
+**Coinbase BTC-USD** feed by itself — no configuration needed.
+
+Two things to know before relying on it:
+
+- **The strike shifts slightly.** Polymarket settles its daily BTC market
+  against Binance BTCUSDT. Coinbase BTC-USD normally trades within a few
+  dollars of it, but the "Price to Beat" the bot computes will not be the
+  exact number Polymarket settles on. On a 1.5% entry stretch a spread of
+  a few dollars is small, though it is not zero — prefer a non-US VPS if
+  you have the choice.
+- **The Coinbase premium filter turns off.** That guard compares Coinbase
+  against Binance; with Coinbase on both sides it would always read 0%.
+  The bot skips it and logs that it did, rather than reporting a veto it
+  is not actually performing.
+
+Coinbase also has no 4h or 1w candles and caps responses at 300, so those
+intervals are aggregated from 1h/1d and paged transparently by the feed.
 
 ---
 
@@ -201,12 +229,13 @@ Output: **`dist/PolyTradePro/`** (~200 MB). Delete `dist/PolyTradePro/data` (tes
 src/
   main.py            # Entry point (Qt + asyncio via qasync, DoH install)
   core/              # Bot engine, connection monitor, secrets, DoH resolver, paths, logging
-  feed/              # Binance WebSocket/REST feed, Coinbase feed (premium filter)
+  feed/              # Binance + Coinbase WebSocket/REST feeds, source selection,
+                     #   Coinbase spot feed (premium filter reference)
   strategy/          # Mean reversion rules + death-trap filters (pure, fully unit-tested)
   execution/         # PaperExecutor (simulated), LiveExecutor (Polymarket CLOB), position resume
   storage/           # SQLite (trades, logs, settings, open position)
   ui/                # PySide6 UI: dashboard, charts, settings, trades, logs, stats, theme
-tests/               # 61 unit tests + smoke tests + verification utilities
+tests/               # 104 unit tests + smoke tests + verification utilities
 assets/              # UI icon assets (spinbox +/−, dropdown chevron)
 data/                # SQLite DB + app.log (auto-created, gitignored)
 run.bat              # Dev launcher

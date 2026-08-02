@@ -47,7 +47,7 @@ class DashboardPage(QWidget):
         # ---- Status cards row -------------------------------------------
         self.cards = {
             "internet": StatusCard("fa6s.globe", "Internet", "#3b82f6"),
-            "binance": StatusCard("fa6b.bitcoin", "Binance (BTC)", "#f7931a"),
+            "market": StatusCard("fa6b.bitcoin", "Binance (BTC)", "#f7931a"),
             "polymarket": StatusCard("fa6s.cube", "Polymarket", "#8b5cf6"),
         }
         self.bot_card = StatCard("Bot Status", "STOPPED")
@@ -67,8 +67,8 @@ class DashboardPage(QWidget):
         cards_row.addWidget(self.balance_card)
 
         # ---- Chart panel --------------------------------------------------
-        chart_title = QLabel("BTC Price (USDT)")
-        chart_title.setProperty("accent", True)
+        self._chart_title = QLabel("BTC Price (USDT)")
+        self._chart_title.setProperty("accent", True)
         self._price_label = QLabel("$ —")
         self._price_label.setProperty("h1", True)
         self._pct_label = QLabel("")
@@ -125,7 +125,7 @@ class DashboardPage(QWidget):
         chart_panel = Card()
         chart_col = QVBoxLayout(chart_panel)
         chart_col.setContentsMargins(14, 12, 14, 12)
-        chart_col.addWidget(chart_title)
+        chart_col.addWidget(self._chart_title)
         chart_col.addLayout(price_row)
         chart_col.addWidget(self._chart_stack, stretch=1)
         chart_col.addWidget(self._strategy_label)
@@ -238,9 +238,18 @@ class DashboardPage(QWidget):
         self._db.set_setting("chart_type", "candles" if index == 1 else "line")
 
     def set_connection(self, name: str, up: bool) -> None:
-        key = "binance" if name == "binance_ws" else name
+        key = "market" if name == "market_ws" else name
         if key in self.cards:
             self.cards[key].set_state(up)
+
+    def set_data_source(self, source: str) -> None:
+        """Ipakita kung aling exchange ang aktwal na pinagkukunan ng presyo."""
+        if source == "coinbase":
+            self.cards["market"].set_name("Coinbase (BTC)")
+            self._chart_title.setText("BTC Price (USD)")
+        else:
+            self.cards["market"].set_name("Binance (BTC)")
+            self._chart_title.setText("BTC Price (USDT)")
 
     def set_bot_state(self, state: str) -> None:
         running = state == "RUNNING"

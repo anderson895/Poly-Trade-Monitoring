@@ -32,7 +32,7 @@ from src.ui.dashboard_page import DashboardPage
 from src.ui.settings_page import SettingsPage
 from src.ui.widgets import Card
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 
 # ---------------------------------------------------------------- sub-pages
@@ -149,7 +149,8 @@ class AboutPage(QWidget):
         body = QLabel(
             f"Polymarket Trading Bot — v{APP_VERSION}\n\n"
             "Strategy: Mean Reversion (\"Rubber Band\") on daily BTC Up/Down markets.\n"
-            "Data: Binance (read-only BTC price feed).\n\n"
+            "Data: Binance BTCUSDT, o Coinbase BTC-USD kapag hindi maabot ang\n"
+            "Binance (hal. sa US-based VPS na hina-harang nito).\n\n"
             "Paper mode simulates every trade with no real money.\n"
             "Switch to Live mode in Settings to trade with real USDC on Polymarket."
         )
@@ -255,6 +256,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._engine = engine
         self._db = db
+        # Ipinapakita sa bottom bar; ina-update ng _on_mode / _on_data_source
+        self._mode = "PAPER"
+        self._data_source = "binance"
         self.setWindowTitle("PolyTrade Pro — Polymarket Trading Bot")
         self.setMinimumSize(1100, 700)
         self.setStyleSheet(theme.STYLESHEET)
@@ -377,6 +381,7 @@ class MainWindow(QMainWindow):
         self.settings.liveBalanceChecked.connect(self.dash.set_live_balance)
         engine.stretchUpdated.connect(self.dash.update_stretch)
         engine.connectionChanged.connect(self.dash.set_connection)
+        engine.dataSourceChanged.connect(self._on_data_source)
         engine.stateChanged.connect(self._on_state)
         engine.strategyStatus.connect(self.dash.set_strategy_status)
         engine.modeChanged.connect(self._on_mode)
@@ -465,8 +470,20 @@ class MainWindow(QMainWindow):
 
     def _on_mode(self, mode: str) -> None:
         self.dash.set_mode(mode)
-        self.bottom.market_label.setText(f"BTC (Binance) → Polymarket [{mode}]")
+        self._mode = mode
+        self._refresh_market_label()
         self._refresh_config_labels()
+
+    def _on_data_source(self, source: str) -> None:
+        self._data_source = source
+        self.dash.set_data_source(source)
+        self._refresh_market_label()
+
+    def _refresh_market_label(self) -> None:
+        name = "Coinbase" if self._data_source == "coinbase" else "Binance"
+        self.bottom.market_label.setText(
+            f"BTC ({name}) → Polymarket [{self._mode}]"
+        )
 
     def _refresh_config_labels(self) -> None:
         """Timeframe + Risk sa bottom bar — mula sa saved settings."""

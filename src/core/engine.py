@@ -35,8 +35,8 @@ from src.execution.polymarket import (
     find_btc_market,
 )
 from src.execution.resume import decide_restore
-from src.feed.binance import BinanceFeed
 from src.feed.coinbase import CoinbaseFeed
+from src.feed.source import SOURCE_LABELS, make_feed, resolve_source
 from src.storage.db import Database
 from src.strategy.filters import (
     coinbase_premium_pct,
@@ -79,6 +79,7 @@ class BotEngine(QObject):
     historyLoaded = Signal(list)          # 1m klines para sa chart prefill
     klineUpdated = Signal(tuple)          # live 1m kline (t,o,h,l,c,v)
     rangeHistoryLoaded = Signal(list)     # on-demand klines (Time filter)
+    dataSourceChanged = Signal(str)       # "binance" | "coinbase"
 
     def __init__(self, db: Database, config: StrategyConfig | None = None) -> None:
         super().__init__()
@@ -91,6 +92,7 @@ class BotEngine(QObject):
         # One-time WARN flags para hindi mag-spam ang log kada tick
         self._volume_veto_logged = False
         self._premium_veto_logged = False
+        self._premium_disabled_logged = False
         # Huling na-log na WATCHING reason (digits stripped) — para makita
         # sa Recent Logs KUNG BAKIT hindi pumapasok, nang walang spam
         self._watch_log_key = ""
@@ -107,13 +109,18 @@ class BotEngine(QObject):
         self._period_secs = 86400.0
         self._live_market_switching = False
 
-        self._feed = BinanceFeed(
-            on_price=self._handle_price,
-            on_daily_open=self._handle_daily_open,
-            on_status=lambda up: self.connectionChanged.emit("binance_ws", up),
-            on_history=self.historyLoaded.emit,
-            on_kline=self.klineUpdated.emit,
-        )
+        # Market data source: "binance" o "coinbase". Naka-Binance ang default
+        # dahil doon naka-angkla ang Polymarket settlement; ang aktwal na
+        # pinili ay nireresolba sa start_monitors (maaaring auto-fallback).
+        self._feed_source = "binance"
+        self._feed_callbacks = {
+            "on_price": self._handle_price,
+            "on_daily_open": self._handle_daily_open,
+            "on_status": lambda up: self.connectionChanged.emit("market_ws", up),
+            "on_history": self.historyLoaded.emit,
+            "on_kline": self.klineUpdated.emit,
+        }
+        self._feed = make_feed(self._feed_source, **self._feed_callbacks)
         self._monitor = ConnectionMonitor(
             on_status=lambda name, up: self.connectionChanged.emit(name, up)
         )
@@ -124,15 +131,44 @@ class BotEngine(QObject):
     def start_monitors(self) -> None:
         """Tumatakbo kahit STOPPED ang bot: connection checks + LIVE CHART.
 
-        Ang Binance price feed ay laging bukas para gumagalaw ang chart
-        kahit hindi pa naka-START — ang START/STOP ay para lang sa
-        trading (strategy evaluation).
+        Ang price feed ay laging bukas para gumagalaw ang chart kahit hindi
+        pa naka-START — ang START/STOP ay para lang sa trading (strategy
+        evaluation).
         """
+        self._monitor.start()
+        try:
+            asyncio.create_task(self._start_feed())
+        except RuntimeError:
+            # Walang running event loop (hal. sa UI tests) — laktawan ang
+            # probe at gamitin na ang default na source
+            self._start_feed_sync()
+
+    async def _start_feed(self) -> None:
+        """Piliin ang data source (may auto-fallback) bago simulan ang feed."""
+        setting = str(self._db.get_setting("market_data_source", "auto"))
+        try:
+            source = await resolve_source(setting)
+        except Exception:
+            filelog.exception("Data source probe failed:")
+            source = "binance"
+        self._start_feed_sync(source)
+
+    def _start_feed_sync(self, source: str | None = None) -> None:
+        if source is not None and source != self._feed_source:
+            self._feed_source = source
+            self._feed = make_feed(source, **self._feed_callbacks)
+        self._monitor.set_source(self._feed_source)
+        self.dataSourceChanged.emit(self._feed_source)
+        self.log("INFO", f"Market data: {SOURCE_LABELS[self._feed_source]} "
+                         f"({'BTC-USD' if self._feed_source == 'coinbase' else 'BTCUSDT'})")
+        if self._feed_source == "coinbase":
+            self.log("WARN", "Binance unreachable — Coinbase BTC-USD ang "
+                             "ginagamit. Bahagyang iba ito sa BTCUSDT na "
+                             "pinagbabasehan ng Polymarket settlement.")
         # I-apply ang naka-save na timeframe para tama ang period open at
         # stretch % kahit hindi pa naka-START ang bot
         tf = str(self._db.get_setting("market_timeframe", "daily"))
         self._feed.set_period(TF_TO_INTERVAL.get(tf, "1d"))
-        self._monitor.start()
         self._feed.start()
 
     def start(self) -> None:
@@ -154,7 +190,9 @@ class BotEngine(QObject):
 
         self._feed.set_period(TF_TO_INTERVAL[self._timeframe])
         self._feed.start()  # idempotent — tumatakbo na mula start_monitors
-        self._coinbase.start()
+        if self._feed_source != "coinbase":
+            self._coinbase.start()  # premium reference lang; redundant kung
+                                    # Coinbase na mismo ang price feed
         self.stateChanged.emit(self.state.value)
         self.log("INFO", f"Bot STARTED [{mode.upper()} MODE] — "
                          f"{self._timeframe.upper()} market, "
@@ -442,8 +480,16 @@ class BotEngine(QObject):
                 self._volume_veto_logged = False
 
                 # Death trap guard #3: Coinbase premium veto (fail-open kung
-                # walang Coinbase data)
-                if self._coinbase.last_price is not None:
+                # walang Coinbase data). Kapag Coinbase na rin ang price
+                # feed, Coinbase-vs-Coinbase ang kukuwentahin — laging 0%,
+                # kaya walang kabuluhan ang filter at nilalaktawan na lang.
+                if self._feed_source == "coinbase":
+                    if not self._premium_disabled_logged:
+                        self.log("INFO", "Coinbase premium filter inactive — "
+                                         "Coinbase na rin ang price feed, "
+                                         "walang independent na reference")
+                        self._premium_disabled_logged = True
+                elif self._coinbase.last_price is not None:
                     premium = coinbase_premium_pct(
                         self._coinbase.last_price, self._feed.last_price
                     )

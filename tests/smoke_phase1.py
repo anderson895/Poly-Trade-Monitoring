@@ -43,7 +43,7 @@ async def test_status_endpoints() -> None:
     monitor = ConnectionMonitor(lambda name, up: results.update({name: up}))
     async with httpx.AsyncClient(timeout=8) as client:
         await asyncio.gather(
-            *(monitor._check(client, n, u) for n, u in ConnectionMonitor.SERVICES.items())
+            *(monitor._check(client, n, u) for n, u in monitor.SERVICES.items())
         )
     for name, up in results.items():
         print(f"[{'OK' if up else 'FAIL'}] {name} reachable: {up}")

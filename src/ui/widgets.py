@@ -54,6 +54,9 @@ class StatusCard(Card):
         row.addLayout(text_col, stretch=1)
         row.addWidget(self._dot)
 
+    def set_name(self, name: str) -> None:
+        self._name.setText(name)
+
     def set_state(self, up: bool) -> None:
         color = theme.GREEN if up else theme.RED
         self._sub.setText("Connected" if up else "Disconnected")

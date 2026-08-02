@@ -1,4 +1,4 @@
-"""Periodic connection checks: Internet, Binance, Polymarket.
+"""Periodic connection checks: Internet, market data source, Polymarket.
 
 Bawat 15 segundo, chine-check kung reachable ang bawat service,
 tapos ini-report sa UI via callback.
@@ -16,23 +16,36 @@ filelog = logging.getLogger("polytrade.status")
 CHECK_INTERVAL = 15  # seconds
 
 INTERNET_URL = "https://1.1.1.1"                       # Cloudflare - internet check
-BINANCE_URL = "https://api.binance.com/api/v3/ping"    # Binance REST ping
 POLYMARKET_URL = "https://clob.polymarket.com/time"    # Polymarket CLOB server time
+
+# REST health check kada data source. Walang saysay i-ping ang Binance kapag
+# Coinbase ang aktwal na feed (hal. sa US VPS kung saan 451 ang Binance) —
+# magpapakita lang ito ng permanenteng "Disconnected" na card.
+MARKET_URLS = {
+    "binance": "https://api.binance.com/api/v3/ping",
+    "coinbase": "https://api.exchange.coinbase.com/products/BTC-USD/ticker",
+}
 
 StatusCallback = Callable[[str, bool], None]  # (service_name, is_up)
 
 
 class ConnectionMonitor:
-    SERVICES = {
-        "internet": INTERNET_URL,
-        "binance": BINANCE_URL,
-        "polymarket": POLYMARKET_URL,
-    }
-
-    def __init__(self, on_status: StatusCallback) -> None:
+    def __init__(self, on_status: StatusCallback, source: str = "binance") -> None:
         self._on_status = on_status
         self._task: Optional[asyncio.Task] = None
         self._last_state: dict[str, bool] = {}
+        self.SERVICES = {
+            "internet": INTERNET_URL,
+            "market": MARKET_URLS[source],
+            "polymarket": POLYMARKET_URL,
+        }
+
+    def set_source(self, source: str) -> None:
+        """Ilipat ang market health check sa ibang exchange."""
+        url = MARKET_URLS.get(source)
+        if url and self.SERVICES["market"] != url:
+            self.SERVICES["market"] = url
+            self._last_state.pop("market", None)  # sariwang log sa bagong host
 
     def start(self) -> None:
         if self._task is None or self._task.done():
