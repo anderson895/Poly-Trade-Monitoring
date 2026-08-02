@@ -237,6 +237,15 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
   `CoinbaseMarketFeed` (drop-in ng `BinanceFeed`) at `Auto` na source
   selection na nagpo-probe sa Binance sa launch. Sumusunod na rin ang
   offline tooling. 118 unit tests
+- **v1.3.1** (2026-08-02) — **fix sa source detection**. Nadiskubre sa
+  unang totoong VPS deployment: pumapasa ang Binance REST ping habang
+  naka-block ang stream host, kaya napipili ang Binance tapos walang
+  katapusang nagre-reconnect — walang laman ang chart, patay ang bot.
+  Dalawang ayos: (a) pinu-probe na rin ang WebSocket sa launch, hindi
+  REST lang; (b) runtime fallback matapos ang 3 sunod-sunod na
+  pagkabigo, dahil hindi sapat ang launch-time check lang. Ang default
+  kapag nabigo ang probe ay Coinbase na (dati'y Binance — ang mismong
+  source na malamang sira). 131 unit tests
 
 **Mga feature na naidagdag lampas sa orihinal na plano:**
 - [x] Trading-app style chart: line + candlestick w/ volume (finplot),
@@ -283,7 +292,7 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
       exchange, kaya tumatakbo na rin sa VPS ang `backtest_daily`,
       `_scan_15m_setups`, `smoke_phase1`, at `smoke_volumes` — lahat ay
       may optional na `[source]` argument
-- [x] 34 bagong unit tests (**118 total**)
+- [x] 34 bagong unit tests (**118 total**; 131 sa v1.3.1)
 
 **⚠️ Kilalang trade-off:** nag-se-settle ang Polymarket sa Binance BTCUSDT.
 Ilang dolyar lang ang layo ng Coinbase BTC-USD, pero hindi eksakto ang

@@ -20,7 +20,7 @@ from src.feed.coinbase_market import (
     aggregate_rows,
     bucket_start,
 )
-from src.feed.source import make_feed, resolve_source
+from src.feed.source import binance_reachable, make_feed, resolve_source
 
 
 def noop_feed(**overrides) -> CoinbaseMarketFeed:
@@ -211,6 +211,44 @@ class TestSourceSelection(unittest.IsolatedAsyncioTestCase):
         with mock.patch("src.feed.source.binance_reachable",
                         new=mock.AsyncMock(return_value=False)):
             self.assertEqual(await resolve_source("kraken"), "coinbase")
+
+    async def test_rest_ok_but_blocked_websocket_falls_back(self) -> None:
+        # Ito ang aktwal na nangyari sa VPS: sumasagot ng 200 ang REST ping
+        # pero naka-block ang stream host, kaya napili ang Binance tapos
+        # walang katapusang nagre-reconnect ang feed
+        ok = mock.Mock(status_code=200)
+        client = mock.AsyncMock()
+        client.get = mock.AsyncMock(return_value=ok)
+        client.__aenter__ = mock.AsyncMock(return_value=client)
+        client.__aexit__ = mock.AsyncMock(return_value=False)
+        with mock.patch("src.feed.source.httpx.AsyncClient", return_value=client), \
+             mock.patch("src.feed.source.websockets.connect",
+                        side_effect=OSError("blocked")):
+            self.assertFalse(await binance_reachable())
+
+    async def test_reachable_needs_both_rest_and_websocket(self) -> None:
+        ok = mock.Mock(status_code=200)
+        client = mock.AsyncMock()
+        client.get = mock.AsyncMock(return_value=ok)
+        client.__aenter__ = mock.AsyncMock(return_value=client)
+        client.__aexit__ = mock.AsyncMock(return_value=False)
+        ws = mock.AsyncMock()
+        ws.__aenter__ = mock.AsyncMock(return_value=ws)
+        ws.__aexit__ = mock.AsyncMock(return_value=False)
+        with mock.patch("src.feed.source.httpx.AsyncClient", return_value=client), \
+             mock.patch("src.feed.source.websockets.connect", return_value=ws):
+            self.assertTrue(await binance_reachable())
+
+    async def test_geo_blocked_rest_skips_the_websocket_probe(self) -> None:
+        blocked = mock.Mock(status_code=451)
+        client = mock.AsyncMock()
+        client.get = mock.AsyncMock(return_value=blocked)
+        client.__aenter__ = mock.AsyncMock(return_value=client)
+        client.__aexit__ = mock.AsyncMock(return_value=False)
+        with mock.patch("src.feed.source.httpx.AsyncClient", return_value=client), \
+             mock.patch("src.feed.source.websockets.connect") as ws_connect:
+            self.assertFalse(await binance_reachable())
+        ws_connect.assert_not_called()
 
     def test_both_feeds_share_the_same_public_api(self) -> None:
         # Drop-in dapat ang Coinbase feed — kung may madagdag sa BinanceFeed

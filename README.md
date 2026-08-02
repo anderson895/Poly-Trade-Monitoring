@@ -11,7 +11,7 @@ Supports **Paper mode** (fully simulated, no real money) and **Live mode** (real
 - 🤖 **Automated strategy** — 1.5%–2.5% stretch entry inside the 4–12h window of the market period, 15¢–25¢ share price gate, profit target / stop loss / end-of-period exits, one trade per market period. The daily market is anchored to **12:00 PM ET** (its real settlement anchor), not 00:00 UTC
 - ⏱️ **Market Timeframes** — Daily / 4H / 1H / 15M Polymarket markets, with strategy timings and stretch thresholds auto-scaled per timeframe and automatic market rollover each period
 - 🛡️ **"Death trap" filters** — volume escalation veto, Coinbase premium veto (inactive when Coinbase is itself the price feed), and a manual Economic Data Day block
-- 🌐 **Selectable data source** — Binance BTCUSDT by default, Coinbase BTC-USD where Binance is unreachable (it blocks US IPs with HTTP 451, which breaks the bot on a US-based VPS). `Auto` probes Binance on launch and falls back on its own
+- 🌐 **Selectable data source** — Binance BTCUSDT by default, Coinbase BTC-USD where Binance is unreachable (it blocks US IPs with HTTP 451, which breaks the bot on a US-based VPS). `Auto` probes both Binance REST *and* its WebSocket on launch, and also switches over mid-session if the feed keeps failing
 - 📊 **Full dashboard** — connection status (Internet / BTC feed / Polymarket), bot status, live balance, trades table, statistics (win rate, PnL), and logs
 - 🔐 **Secure secrets** — private keys stored in Windows Credential Manager, never in files; credential verification on save
 - 🔁 **Resilience** — WebSocket auto-reconnect, position resume after restart, automatic fallback to Paper mode when Live setup fails, in-app DoH resolver that bypasses ISP DNS poisoning of Polymarket domains
@@ -89,7 +89,7 @@ Requirements: Windows 10/11, internet connection.
 .\venv\Scripts\python.exe -m pytest tests -v
 ```
 
-**Expected: 118 passed.** Coverage:
+**Expected: 131 passed.** Coverage:
 
 | Test file | What it verifies |
 |---|---|
@@ -102,6 +102,7 @@ Requirements: Windows 10/11, internet connection.
 | `test_paper_e2e.py` | **Full engine buy→sell simulation** — pump → BUY at ~20¢ → reversion → SELL at profit target, plus stop-loss and trade-limit cycles |
 | `test_coinbase_feed.py` | Coinbase feed: candle column-order translation, 4h/1w aggregation, 300-candle pagination, tick→1m candle building, and data-source selection |
 | `test_history.py` | Historical fetcher used by the backtest tooling: per-exchange column order and paging, range trimming, in-progress candle removal |
+| `test_feed_fallback.py` | Runtime source fallback: switching after repeated feed failures, respecting an explicit source choice, and not switching on a transient blip |
 
 ### STEP 2 — Smoke tests (require internet)
 
@@ -215,8 +216,21 @@ Output: **`dist/PolyTradePro/`** (~200 MB). Delete `dist/PolyTradePro/data` (tes
 
 Binance blocks US IP addresses with **HTTP 451**, so on a US-based VPS the
 Binance feed never connects and the bot cannot see a price at all. On
-`Auto` (the default) the app probes Binance at launch and switches to the
-**Coinbase BTC-USD** feed by itself — no configuration needed.
+`Auto` (the default) the app switches to the **Coinbase BTC-USD** feed by
+itself — no configuration needed.
+
+Detection runs at two levels, because one is not enough:
+
+1. **At launch**, both the Binance REST endpoint *and* its WebSocket are
+   probed. Checking REST alone is not sufficient — some hosts answer the
+   REST ping normally while the stream host is blocked, which would pick
+   Binance and then reconnect forever with an empty chart.
+2. **During the session**, three consecutive feed failures (~15s) trigger a
+   switch to Coinbase. A single reconnect is normal and does not switch;
+   Binance also recycles its streams every 24 hours.
+
+Choosing a source explicitly disables both — an explicit `Binance` is
+respected even if it keeps failing.
 
 Two things to know before relying on it:
 
@@ -257,7 +271,7 @@ src/
   execution/         # PaperExecutor (simulated), LiveExecutor (Polymarket CLOB), position resume
   storage/           # SQLite (trades, logs, settings, open position)
   ui/                # PySide6 UI: dashboard, charts, settings, trades, logs, stats, theme
-tests/               # 118 unit tests + smoke tests + verification utilities
+tests/               # 131 unit tests + smoke tests + verification utilities
 assets/              # UI icon assets (spinbox +/−, dropdown chevron)
 data/                # SQLite DB + app.log (auto-created, gitignored)
 run.bat              # Dev launcher

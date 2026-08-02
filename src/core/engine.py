@@ -55,6 +55,10 @@ from src.strategy.mean_reversion import (
 )
 
 DEFAULT_RISK_USDC = 200.0
+# Sunod-sunod na pagkabigo ng live feed bago lumipat ng source. Tatlo =
+# ~15 segundo sa 5s backoff — sapat para hindi mag-switch sa panandaliang
+# network blip, mabilis pa rin para hindi matagal na patay ang chart.
+FEED_FAILURE_LIMIT = 3
 # Polymarket timeframe -> Binance kline interval (para sa period open)
 TF_TO_INTERVAL = {"daily": "1d", "4h": "4h", "1h": "1h", "15m": "15m"}
 
@@ -113,10 +117,15 @@ class BotEngine(QObject):
         # dahil doon naka-angkla ang Polymarket settlement; ang aktwal na
         # pinili ay nireresolba sa start_monitors (maaaring auto-fallback).
         self._feed_source = "binance"
+        # Runtime fallback state: ang launch probe ay hindi sapat, kaya
+        # binibilang din ang sunod-sunod na pagkabigo ng live feed
+        self._auto_source = True
+        self._feed_failures = 0
+        self._switching_source = False
         self._feed_callbacks = {
             "on_price": self._handle_price,
             "on_daily_open": self._handle_daily_open,
-            "on_status": lambda up: self.connectionChanged.emit("market_ws", up),
+            "on_status": self._handle_feed_status,
             "on_history": self.historyLoaded.emit,
             "on_kline": self.klineUpdated.emit,
         }
@@ -146,14 +155,19 @@ class BotEngine(QObject):
     async def _start_feed(self) -> None:
         """Piliin ang data source (may auto-fallback) bago simulan ang feed."""
         setting = str(self._db.get_setting("market_data_source", "auto"))
+        self._auto_source = setting.lower() == "auto"
         try:
             source = await resolve_source(setting)
         except Exception:
-            filelog.exception("Data source probe failed:")
-            source = "binance"
+            # Coinbase ang default kapag hindi matukoy — gumagana ito kahit
+            # saan. Ang Binance ay pwedeng WALANG data nang tuluyan sa
+            # naka-block na host, at mas masama ang patay na bot kaysa sa
+            # bahagyang mas maluwag na strike.
+            filelog.exception("Data source probe failed — Coinbase muna:")
+            source = "coinbase" if self._auto_source else setting.lower()
         # "auto" lang ang aktwal na nagpo-probe sa Binance — kapag tahasang
         # pinili ng user ang Coinbase, hindi tama ang sabihing unreachable
-        self._start_feed_sync(source, fell_back=setting.lower() == "auto")
+        self._start_feed_sync(source, fell_back=self._auto_source)
 
     def _start_feed_sync(self, source: str | None = None,
                          fell_back: bool = False) -> None:
@@ -413,6 +427,42 @@ class BotEngine(QObject):
         return cfg
 
     # ------------------------------------------------------------- handlers
+
+    def _handle_feed_status(self, up: bool) -> None:
+        """Status ng live feed + runtime fallback sa Coinbase.
+
+        Ang launch-time probe ay hindi sapat: may host na pumapasa sa REST
+        ping pero naka-block ang WebSocket, kaya doon lang lumalabas ang
+        problema — matapos nang mapili ang Binance. Kapag paulit-ulit na
+        bumabagsak ang feed, lumilipat na tayo sa halip na mag-reconnect
+        nang walang katapusan sa source na hindi naman gumagana.
+        """
+        self.connectionChanged.emit("market_ws", up)
+        if up:
+            self._feed_failures = 0
+            return
+        self._feed_failures += 1
+        if (self._auto_source
+                and self._feed_source == "binance"
+                and not self._switching_source
+                and self._feed_failures >= FEED_FAILURE_LIMIT):
+            self._switching_source = True
+            try:
+                asyncio.create_task(self._fallback_to_coinbase())
+            except RuntimeError:
+                self._switching_source = False  # walang loop (UI tests)
+
+    async def _fallback_to_coinbase(self) -> None:
+        """Ihinto ang bigong Binance feed at ilipat sa Coinbase."""
+        self.log("WARN", f"Binance feed failed {self._feed_failures}x in a row "
+                         "— switching to Coinbase")
+        try:
+            await self._feed.stop()
+        except Exception:
+            filelog.exception("Stopping the failed feed:")
+        self._start_feed_sync("coinbase", fell_back=True)
+        self._feed_failures = 0
+        self._switching_source = False
 
     def _handle_price(self, price: float) -> None:
         self.priceUpdated.emit(price)
