@@ -89,7 +89,7 @@ Requirements: Windows 10/11, internet connection.
 .\venv\Scripts\python.exe -m pytest tests -v
 ```
 
-**Expected: 104 passed.** Coverage:
+**Expected: 118 passed.** Coverage:
 
 | Test file | What it verifies |
 |---|---|
@@ -101,14 +101,26 @@ Requirements: Windows 10/11, internet connection.
 | `test_resume.py` | Position resume after restart (restore / stale-period / mode-mismatch rules) |
 | `test_paper_e2e.py` | **Full engine buy→sell simulation** — pump → BUY at ~20¢ → reversion → SELL at profit target, plus stop-loss and trade-limit cycles |
 | `test_coinbase_feed.py` | Coinbase feed: candle column-order translation, 4h/1w aggregation, 300-candle pagination, tick→1m candle building, and data-source selection |
+| `test_history.py` | Historical fetcher used by the backtest tooling: per-exchange column order and paging, range trimming, in-progress candle removal |
 
 ### STEP 2 — Smoke tests (require internet)
 
 ```powershell
-.\venv\Scripts\python.exe -m tests.smoke_phase1      # DB + Binance REST/WS + status endpoints
+.\venv\Scripts\python.exe -m tests.smoke_phase1      # DB + market REST/WS + status endpoints
 .\venv\Scripts\python.exe -m tests.smoke_volumes     # live hourly-volume filter check
 .\venv\Scripts\python.exe -m tests.check_polymarket  # Polymarket endpoint reachability
 .\venv\Scripts\python.exe -m tests.verify_live_creds # credential check (read-only, no orders)
+```
+
+The market-data scripts accept an optional source argument (`auto` by
+default, or `binance` / `coinbase`) so they can be pinned to one exchange
+or run where Binance is blocked:
+
+```powershell
+.\venv\Scripts\python.exe -m tests.smoke_phase1 coinbase
+.\venv\Scripts\python.exe -m tests.smoke_volumes coinbase
+.\venv\Scripts\python.exe -m tests.backtest_daily 365 coinbase   # days, then source
+.\venv\Scripts\python.exe -m tests._scan_15m_setups coinbase
 ```
 
 ### STEP 3 — Open the app and verify the UI
@@ -222,6 +234,15 @@ Two things to know before relying on it:
 Coinbase also has no 4h or 1w candles and caps responses at 300, so those
 intervals are aggregated from 1h/1d and paged transparently by the feed.
 
+The offline tooling follows the same rule. `backtest_daily`,
+`_scan_15m_setups`, `smoke_phase1` and `smoke_volumes` all auto-detect the
+source and accept an explicit one, so backtesting works on a blocked host
+too. A 365-day 15m backtest pulls ~35,000 candles in roughly 80 seconds on
+Coinbase (118 paged requests) versus ~36 requests on Binance. Results track
+closely — the same 365-day window gives 102 trades / 28% win rate on
+Coinbase against 103 / 29% on Binance — but the two are not directly
+comparable, since the underlying prices differ.
+
 ---
 
 ## Project Structure
@@ -236,7 +257,7 @@ src/
   execution/         # PaperExecutor (simulated), LiveExecutor (Polymarket CLOB), position resume
   storage/           # SQLite (trades, logs, settings, open position)
   ui/                # PySide6 UI: dashboard, charts, settings, trades, logs, stats, theme
-tests/               # 104 unit tests + smoke tests + verification utilities
+tests/               # 118 unit tests + smoke tests + verification utilities
 assets/              # UI icon assets (spinbox +/−, dropdown chevron)
 data/                # SQLite DB + app.log (auto-created, gitignored)
 run.bat              # Dev launcher

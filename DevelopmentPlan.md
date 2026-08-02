@@ -235,7 +235,8 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
   hina-harang ng Binance ang mga US IP (HTTP 451), kaya hindi kumokonekta
   ang feed sa US-based VPS at hindi gumagana ang bot doon. Bagong
   `CoinbaseMarketFeed` (drop-in ng `BinanceFeed`) at `Auto` na source
-  selection na nagpo-probe sa Binance sa launch. 104 unit tests
+  selection na nagpo-probe sa Binance sa launch. Sumusunod na rin ang
+  offline tooling. 118 unit tests
 
 **Mga feature na naidagdag lampas sa orihinal na plano:**
 - [x] Trading-app style chart: line + candlestick w/ volume (finplot),
@@ -276,16 +277,24 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
 - [x] **Coinbase premium filter ay hindi aktibo kapag Coinbase na rin ang
       price feed** — Coinbase-vs-Coinbase = laging 0%, kaya nilalaktawan
       at nila-log, imbes na mag-report ng veto na hindi naman ginagawa
-- [x] 20 bagong unit tests (**104 total**)
+- [x] **`src/feed/history.py`** — sync at range-based na historical
+      fetcher para sa offline tooling (iba ito sa mga live feed na
+      count-based at paatras mula ngayon). Sinusuportahan ang parehong
+      exchange, kaya tumatakbo na rin sa VPS ang `backtest_daily`,
+      `_scan_15m_setups`, `smoke_phase1`, at `smoke_volumes` — lahat ay
+      may optional na `[source]` argument
+- [x] 34 bagong unit tests (**118 total**)
 
 **⚠️ Kilalang trade-off:** nag-se-settle ang Polymarket sa Binance BTCUSDT.
 Ilang dolyar lang ang layo ng Coinbase BTC-USD, pero hindi eksakto ang
 "Price to Beat" kapag Coinbase ang source. Non-US VPS pa rin ang mas tama
 kung may pagpipilian.
 
-**Natitirang gap:** naka-hardcode pa rin sa Binance REST ang
-`tests/backtest_daily.py`, `_scan_15m_setups.py`, `smoke_phase1.py`, at
-`smoke_volumes.py` — masisira ang mga ito kapag pinatakbo sa US VPS.
+**Backtest equivalence:** sa parehong 365-araw na window, ang Coinbase ay
+nagbigay ng 102 trades / 28% WR / −$3,656, ang Binance ay 103 / 29% /
+−$3,318. Malapit, pero HINDI direktang maihahambing — magkaibang presyo
+ang pinagbabatayan. Huwag paghaluin ang resulta ng dalawang source sa
+iisang konklusyon.
 
 ---
 

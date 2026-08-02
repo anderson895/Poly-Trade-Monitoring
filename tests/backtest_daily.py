@@ -1,4 +1,4 @@
-"""Backtest ng daily mean-reversion strategy sa historical Binance data.
+"""Backtest ng daily mean-reversion strategy sa historical BTC data.
 
 Vina-validate nito ang dalawang bagay mula sa DevelopmentPlan §7:
   1. Ang "over 90% of daily candles have wicks" claim — gaano kadalas
@@ -17,56 +17,45 @@ LIMITASYON: ang share prices ay mula sa paper linear model, HINDI totoong
 Polymarket order book — ang PnL ay strategy-shape validation lang, hindi
 eksaktong kita.
 
-Run:  .\\venv\\Scripts\\python.exe -m tests.backtest_daily [days]
-      (default 365 araw; ~36 REST calls sa Binance)
+Ang data source ay Binance kung naaabot, Coinbase kung hindi (hal. sa US
+VPS na sinasagot ng HTTP 451) — tingnan ang `src/feed/history.py`.
+Bahagyang naiiba ang BTC-USD sa BTCUSDT, kaya huwag ihambing nang tuwiran
+ang resulta ng dalawang source.
+
+Run:  .\\venv\\Scripts\\python.exe -m tests.backtest_daily [days] [source]
+      days   = default 365
+      source = auto (default) | binance | coinbase
 """
 from __future__ import annotations
 
 import datetime as dt
 import sys
-import time
-
-import httpx
 
 from src.execution.paper import estimate_otm_share_price, position_share_price
+from src.feed.history import describe_source, fetch_range, resolve_source_sync
 from src.strategy.mean_reversion import (
     StrategyConfig,
     period_start_utc,
     target_side,
 )
 
-BINANCE = "https://api.binance.com"
 CANDLE_SECS = 900  # 15m candles — sapat na resolution para sa daily periods
 RISK_USDC = 200.0
 
 cfg = StrategyConfig()  # daily defaults, pareho ng bot
 
 
-def fetch_15m_closes(days: int) -> list[tuple[float, float]]:
+def fetch_15m_closes(days: int, source: str) -> list[tuple[float, float]]:
     """(open_ts_sec, close_price) ng bawat 15m candle sa nakaraang N araw."""
-    end = dt.datetime.now(dt.timezone.utc)
-    start_ms = int((end - dt.timedelta(days=days + 2)).timestamp() * 1000)
-    rows: list[tuple[float, float]] = []
-    client = httpx.Client(timeout=20)
-    while True:
-        resp = client.get(f"{BINANCE}/api/v3/klines", params={
-            "symbol": "BTCUSDT", "interval": "15m",
-            "startTime": start_ms, "limit": 1000,
-        })
-        resp.raise_for_status()
-        batch = resp.json()
-        if not batch:
-            break
-        rows += [(k[0] / 1000.0, float(k[4])) for k in batch]
-        start_ms = batch[-1][0] + CANDLE_SECS * 1000
-        if len(batch) < 1000:
-            break
-        time.sleep(0.15)  # huwag i-hammer ang API
-    return rows[:-1]  # in-progress pa ang huli
+    end = dt.datetime.now(dt.timezone.utc).timestamp()
+    start = end - (days + 2) * 86400
+    return [(r[0], r[4]) for r in fetch_range("15m", start, end, source=source)]
 
 
-def simulate(days: int) -> None:
-    rows = fetch_15m_closes(days)
+def simulate(days: int, source: str = "auto") -> None:
+    resolved = resolve_source_sync(source)
+    print(f"Data source: {describe_source(resolved)}")
+    rows = fetch_15m_closes(days, resolved)
     by_ts = {ts: close for ts, close in rows}
     print(f"Nakuha: {len(rows):,} candles "
           f"({dt.datetime.fromtimestamp(rows[0][0], dt.timezone.utc):%Y-%m-%d} "
@@ -184,4 +173,5 @@ def simulate(days: int) -> None:
 
 if __name__ == "__main__":
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 365
-    simulate(days)
+    src = sys.argv[2] if len(sys.argv) > 2 else "auto"
+    simulate(days, src)

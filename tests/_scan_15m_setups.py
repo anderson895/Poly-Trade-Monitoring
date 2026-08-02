@@ -1,26 +1,22 @@
-"""Ilang 15m entry setup ang nagkaroon sa nakaraang 48 oras? (totoong data)"""
-import datetime as dt
+"""Ilang 15m entry setup ang nagkaroon sa nakaraang 48 oras? (totoong data)
 
-import httpx
+Run:  .\\venv\\Scripts\\python.exe -m tests._scan_15m_setups [source]
+      source = auto (default) | binance | coinbase
+"""
+import datetime as dt
+import sys
+
+from src.feed.history import describe_source, fetch_range, resolve_source_sync
 
 MIN_S, MAX_S = 0.15309, 0.25516  # 15m stretch band ng bot
 
-now = dt.datetime.now(dt.timezone.utc)
-start = now - dt.timedelta(hours=48)
-rows = []
-start_ms = int(start.timestamp() * 1000)
-client = httpx.Client(timeout=20)
-while True:
-    r = client.get("https://api.binance.com/api/v3/klines",
-                   params={"symbol": "BTCUSDT", "interval": "1m",
-                           "startTime": start_ms, "limit": 1000})
-    batch = r.json()
-    if not batch:
-        break
-    rows += [(k[0] / 1000.0, float(k[1]), float(k[2]), float(k[3])) for k in batch]
-    start_ms = batch[-1][0] + 60_000
-    if len(batch) < 1000:
-        break
+source = resolve_source_sync(sys.argv[1] if len(sys.argv) > 1 else "auto")
+print(f"Data source: {describe_source(source)}")
+
+now = dt.datetime.now(dt.timezone.utc).timestamp()
+# 1m candles para makita ang intra-period high/low sa entry window
+rows = [(r[0], r[1], r[2], r[3])
+        for r in fetch_range("1m", now - 48 * 3600, now, source=source)]
 
 periods: dict[float, list] = {}
 for ts, o, h, l in rows:
