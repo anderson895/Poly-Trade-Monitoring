@@ -151,9 +151,12 @@ class BotEngine(QObject):
         except Exception:
             filelog.exception("Data source probe failed:")
             source = "binance"
-        self._start_feed_sync(source)
+        # "auto" lang ang aktwal na nagpo-probe sa Binance — kapag tahasang
+        # pinili ng user ang Coinbase, hindi tama ang sabihing unreachable
+        self._start_feed_sync(source, fell_back=setting.lower() == "auto")
 
-    def _start_feed_sync(self, source: str | None = None) -> None:
+    def _start_feed_sync(self, source: str | None = None,
+                         fell_back: bool = False) -> None:
         if source is not None and source != self._feed_source:
             self._feed_source = source
             self._feed = make_feed(source, **self._feed_callbacks)
@@ -162,9 +165,12 @@ class BotEngine(QObject):
         self.log("INFO", f"Market data: {SOURCE_LABELS[self._feed_source]} "
                          f"({'BTC-USD' if self._feed_source == 'coinbase' else 'BTCUSDT'})")
         if self._feed_source == "coinbase":
-            self.log("WARN", "Binance unreachable — Coinbase BTC-USD ang "
-                             "ginagamit. Bahagyang iba ito sa BTCUSDT na "
-                             "pinagbabasehan ng Polymarket settlement.")
+            reason = ("Binance unreachable — " if fell_back
+                      else "Coinbase ang napiling source — ")
+            self.log("WARN", reason + "bahagyang iba ang BTC-USD sa BTCUSDT "
+                                      "na pinagbabasehan ng Polymarket "
+                                      "settlement, kaya hindi eksakto ang "
+                                      "Price to Beat.")
         # I-apply ang naka-save na timeframe para tama ang period open at
         # stretch % kahit hindi pa naka-START ang bot
         tf = str(self._db.get_setting("market_timeframe", "daily"))
