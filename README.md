@@ -89,7 +89,7 @@ Requirements: Windows 10/11, internet connection.
 .\venv\Scripts\python.exe -m pytest tests -v
 ```
 
-**Expected: 84 passed.** Coverage:
+**Expected: 104 passed.** Coverage:
 
 | Test file | What it verifies |
 |---|---|
@@ -100,6 +100,7 @@ Requirements: Windows 10/11, internet connection.
 | `test_netdns.py` | The DoH resolver (ISP DNS-poisoning bypass) |
 | `test_resume.py` | Position resume after restart (restore / stale-period / mode-mismatch rules) |
 | `test_paper_e2e.py` | **Full engine buy→sell simulation** — pump → BUY at ~20¢ → reversion → SELL at profit target, plus stop-loss and trade-limit cycles |
+| `test_coinbase_feed.py` | Coinbase feed: candle column-order translation, 4h/1w aggregation, 300-candle pagination, tick→1m candle building, and data-source selection |
 
 ### STEP 2 — Smoke tests (require internet)
 
