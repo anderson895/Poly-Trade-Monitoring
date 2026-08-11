@@ -32,7 +32,7 @@ from src.ui.dashboard_page import DashboardPage
 from src.ui.settings_page import SettingsPage
 from src.ui.widgets import Card
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 
 
 # ---------------------------------------------------------------- sub-pages

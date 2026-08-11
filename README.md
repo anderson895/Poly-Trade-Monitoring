@@ -89,7 +89,7 @@ Requirements: Windows 10/11, internet connection.
 .\venv\Scripts\python.exe -m pytest tests -v
 ```
 
-**Expected: 131 passed.** Coverage:
+**Expected: 145 passed.** Coverage:
 
 | Test file | What it verifies |
 |---|---|
@@ -103,6 +103,7 @@ Requirements: Windows 10/11, internet connection.
 | `test_coinbase_feed.py` | Coinbase feed: candle column-order translation, 4h/1w aggregation, 300-candle pagination, tick→1m candle building, and data-source selection |
 | `test_history.py` | Historical fetcher used by the backtest tooling: per-exchange column order and paging, range trimming, in-progress candle removal |
 | `test_feed_fallback.py` | Runtime source fallback: switching after repeated feed failures, respecting an explicit source choice, and not switching on a transient blip |
+| `test_book_outage.py` | Behaviour when the Polymarket order book is unreachable: the time-based exit still fires, skips are logged without spamming, and a blocked exit escalates to ERROR |
 
 ### STEP 2 — Smoke tests (require internet)
 
@@ -123,6 +124,18 @@ or run where Binance is blocked:
 .\venv\Scripts\python.exe -m tests.backtest_daily 365 coinbase   # days, then source
 .\venv\Scripts\python.exe -m tests._scan_15m_setups coinbase
 ```
+
+`backtest_daily` only covers the daily market. For the shorter timeframes,
+whose thresholds are sqrt-of-time-scaled from the daily calibration rather
+than measured, use `backtest_timeframe`:
+
+```powershell
+.\venv\Scripts\python.exe -m tests.backtest_timeframe 4h 365 1.5 2.5
+#                                                     tf days min max
+```
+
+It also reports **why** entries were rejected, which is the fastest way to
+tell a badly configured stretch band from a genuinely quiet market.
 
 ### STEP 3 — Open the app and verify the UI
 
@@ -212,6 +225,45 @@ Output: **`dist/PolyTradePro/`** (~200 MB). Delete `dist/PolyTradePro/data` (tes
 
 ---
 
+## Tuning the stretch band (read before lowering it)
+
+**Entry Stretch Band** and **Max Stretch — Death Trap Limit** are not
+independent of the 15¢–25¢ share price gate. In the paper pricing model the
+share price is *derived* from the stretch:
+
+```
+price = 0.50 − 0.15 × stretch        (stretch in daily-equivalent %)
+```
+
+So choosing a stretch band also chooses a price range. For the price gate to
+be reachable at all, the daily-equivalent stretch must land in
+**1.667% – 2.333%**:
+
+| Daily-equiv stretch | Share price | Passes 0.15–0.25? |
+|---|---|---|
+| 0.75% | 0.388 | no — too expensive |
+| 1.50% | 0.275 | no — too expensive |
+| **1.667%** | **0.250** | yes (lower edge) |
+| **2.333%** | **0.150** | yes (upper edge) |
+| 2.50% | 0.125 | no — death-trap territory |
+
+The trap: **lowering the stretch band to trade more often does the
+opposite.** A smaller move means the market still sees the outcome as close
+to a coin flip, so the out-of-the-money share stays expensive and the price
+gate never opens. A band of 0.40%–0.75% can never trade at all — its prices
+are pinned at 0.39–0.44. This has happened in practice: a bot ran for eight
+days on those values and logged 58 `share price outside range` blocks
+without a single entry.
+
+To trade more often, raise **Max Stretch** (toward 2.333%) or widen the
+share price gate — not the other direction. The default 1.5–2.5% works, but
+note that its bottom (1.5–1.667%) and top (2.333–2.5%) are dead zones.
+
+Run `tests.backtest_timeframe` before committing to a band; its "bakit hindi
+pumapasok" breakdown shows immediately whether the gates contradict.
+
+---
+
 ## Running on a VPS
 
 Binance blocks US IP addresses with **HTTP 451**, so on a US-based VPS the
@@ -271,7 +323,7 @@ src/
   execution/         # PaperExecutor (simulated), LiveExecutor (Polymarket CLOB), position resume
   storage/           # SQLite (trades, logs, settings, open position)
   ui/                # PySide6 UI: dashboard, charts, settings, trades, logs, stats, theme
-tests/               # 131 unit tests + smoke tests + verification utilities
+tests/               # 145 unit tests + smoke tests + verification utilities
 assets/              # UI icon assets (spinbox +/−, dropdown chevron)
 data/                # SQLite DB + app.log (auto-created, gitignored)
 run.bat              # Dev launcher

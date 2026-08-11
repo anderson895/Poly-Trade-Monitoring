@@ -246,6 +246,31 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
   pagkabigo, dahil hindi sapat ang launch-time check lang. Ang default
   kapag nabigo ang probe ay Coinbase na (dati'y Binance — ang mismong
   source na malamang sira). 131 unit tests
+- **v1.3.2** (2026-08-11) — **order book outage handling + backtest sa
+  lahat ng timeframe**. Mula sa 8 araw na production log:
+  - **Nawawala ang stop loss kapag bagsak ang order book.** Maaga nang
+    bumabalik ang engine bago pa matawag ang `evaluate_exit`, kaya
+    tumitigil ang LAHAT ng exit checks — kasama ang end-of-period exit na
+    batay lang naman sa ORAS. Kayang dumaan ang position papuntang
+    settlement habang walang koneksyon. Tumatakbo na ito ngayon kahit
+    walang presyo; kapag talagang hindi makalabas, malakas na ERROR na
+    may bilin na manu-manong isara.
+  - **Tahimik na skip.** Nalalampasan ang entry nang walang bakas sa
+    `app.log` — dalawang buong entry window ang lumipas nang walang
+    record. May WARN na ngayon (deduped), at may staleness guard: hindi
+    papasok base sa order book na lampas 60s na ang tanda.
+  - **`tests/backtest_timeframe.py`** — bagong tool para sa 4h/1h/15m,
+    kung saan sqrt-of-time-scaled lang ang mga threshold at hindi pa
+    napapatunayan. Ipinapakita rin kung BAKIT hindi pumapasok.
+  - 14 bagong tests (**145 total**)
+
+**⚠️ Natuklasan sa production (v1.3.2):** ang stretch band at ang 15¢–25¢
+share price gate ay HINDI magkahiwalay — sa paper model ay
+`presyo = 0.50 − 0.15 × stretch`. Kailangang nasa **1.667%–2.333%** ang
+daily-equivalent stretch para maabot ang gate. Ang pagbaba ng band para
+"mas madalas mag-trade" ay siyang sumisira nito: 8 araw na tumakbo ang
+isang bot sa 0.40–0.75% at 58 beses na na-block sa `share price outside
+range`, zero trade. Hindi naaalerto ng UI ang user tungkol dito.
 
 **Mga feature na naidagdag lampas sa orihinal na plano:**
 - [x] Trading-app style chart: line + candlestick w/ volume (finplot),

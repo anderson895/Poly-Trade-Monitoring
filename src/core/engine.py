@@ -59,6 +59,11 @@ DEFAULT_RISK_USDC = 200.0
 # ~15 segundo sa 5s backoff — sapat para hindi mag-switch sa panandaliang
 # network blip, mabilis pa rin para hindi matagal na patay ang chart.
 FEED_FAILURE_LIMIT = 3
+# Lampas dito, hindi na mapagkakatiwalaan ang order book para sa BAGONG
+# entry — nire-refresh ito kada 5s, kaya ang 60s ay ilang sunod-sunod nang
+# pagkabigo. Sa PAGLABAS ay ginagamit pa rin ang lumang presyo: mas mabuti
+# ang bahagyang laos na exit kaysa sa hindi paglabas.
+BOOK_STALE_SECS = 60.0
 # Polymarket timeframe -> Binance kline interval (para sa period open)
 TF_TO_INTERVAL = {"daily": "1d", "4h": "4h", "1h": "1h", "15m": "15m"}
 
@@ -103,6 +108,8 @@ class BotEngine(QObject):
         # Live mode state
         self._live_client: PolymarketClient | None = None
         self._live_books: dict[str, tuple[float | None, float | None]] = {}
+        self._books_fetched_at: float = 0.0  # para masukat ang staleness
+        self._book_skip_logged = ""          # dedup ng skip warnings
         self._live_price_task: asyncio.Task | None = None
         self._live_balance_task: asyncio.Task | None = None
         self._live_pending = False
@@ -304,6 +311,9 @@ class BotEngine(QObject):
                     self._live_books[side] = await asyncio.to_thread(
                         self._live_client.get_best_prices, token
                     )
+                self._books_fetched_at = dt.datetime.now(
+                    dt.timezone.utc).timestamp()
+                self._book_skip_logged = ""  # sariwa na — i-log ulit kung bumagsak
                 fetch_failed_logged = False
             except asyncio.CancelledError:
                 raise
@@ -464,6 +474,24 @@ class BotEngine(QObject):
         self._feed_failures = 0
         self._switching_source = False
 
+    def _book_age(self) -> float:
+        """Ilang segundo na ang huling matagumpay na order book fetch."""
+        if not self._books_fetched_at:
+            return float("inf")
+        return dt.datetime.now(dt.timezone.utc).timestamp() - self._books_fetched_at
+
+    def _log_book_skip(self, what: str, why: str) -> None:
+        """I-log ang order-book problema nang isang beses kada klase.
+
+        Dedup lang sa (what, why) — hindi sa mga numero — para hindi
+        mag-spam kada tick pero may bakas pa rin sa app.log. Dating
+        walang naitatala kaya hindi malaman kung may napalampas.
+        """
+        key = f"{what}|{why.split('(')[0]}"
+        if key != self._book_skip_logged:
+            self._book_skip_logged = key
+            self.log("WARN", f"{what} — {why}")
+
     def _handle_price(self, price: float) -> None:
         self.priceUpdated.emit(price)
         stretch = self._feed.pct_from_open
@@ -513,8 +541,15 @@ class BotEngine(QObject):
                 # Totoong order book: bibili tayo sa best ASK ng target side
                 book = self._live_books.get(target_side(stretch))
                 share_price = book[1] if book else None
-                if share_price is None:
-                    self.strategyStatus.emit("WAITING — no live order book data yet")
+                age = self._book_age()
+                # Huwag pumasok base sa lumang presyo — pero I-LOG ang skip.
+                # Dating tahimik ito: nalalampasan ang entry nang walang
+                # kahit anong bakas sa app.log.
+                if share_price is None or age > BOOK_STALE_SECS:
+                    why = ("walang order book data" if share_price is None
+                           else f"laos na ang order book ({age:.0f}s)")
+                    self._log_book_skip("Entry skipped", why)
+                    self.strategyStatus.emit(f"WAITING — {why}")
                     return
             else:
                 share_price = estimate_otm_share_price(stretch, self._price_scale)
@@ -589,18 +624,38 @@ class BotEngine(QObject):
         else:
             pos = self.executor.position
             if live:
-                # Magbebenta tayo sa best BID ng hawak nating side
+                # Magbebenta tayo sa best BID ng hawak nating side.
+                # HINDI tayo bumabalik agad kapag wala — ang end-of-period
+                # exit ay batay sa oras, at kailangan pa ring masuri kahit
+                # bagsak ang order book. Dati, tuwing nawawalan ng
+                # koneksyon ay tumitigil ang LAHAT ng exit checks, kaya
+                # kayang dumaan ang position sa stop loss papuntang
+                # settlement nang tahimik.
                 book = self._live_books.get(pos.side)
                 share_price = book[0] if book else None
                 if share_price is None:
-                    self.strategyStatus.emit("WAITING — no live order book data yet")
-                    return
+                    self._log_book_skip(
+                        "Exit check degraded", "walang order book data — "
+                        "oras na lang ang batayan ng paglabas"
+                    )
             else:
                 share_price = position_share_price(
                     stretch, pos.side, self._price_scale
                 )
             sig = evaluate_exit(now, pos, share_price, self.config)
             if sig.action is Action.EXIT:
+                if share_price is None:
+                    # Kailangan nang lumabas pero walang presyong maipapasa
+                    # sa order. Hindi ito matahimik na lalampasan — may
+                    # totoong pera sa labas at kailangang malaman ng user.
+                    self.log("ERROR",
+                             f"EXIT kailangan na ({sig.reason}) pero walang "
+                             "order book — HINDI makakalabas ang bot. "
+                             "Manu-manong isara ang position sa Polymarket.")
+                    self.strategyStatus.emit(
+                        "ERROR — exit blocked, walang order book data"
+                    )
+                    return
                 tag = self.executor.MODE
                 try:
                     pnl = self.executor.sell(market, share_price)

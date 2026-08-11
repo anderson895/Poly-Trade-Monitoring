@@ -230,7 +230,22 @@ def evaluate_exit(
     cfg: StrategyConfig = StrategyConfig(),
 ) -> Signal:
     """Dapat bang lumabas? Tawagin lang ito kapag MAY open position."""
+    period_over = (
+        hours_into_period(now_utc, cfg.period_hours, cfg.anchor_offset_secs)
+        >= cfg.eod_exit_hour
+    )
+
+    # Ang end-of-period exit ay batay sa ORAS lang, hindi sa presyo — kaya
+    # dapat itong tumakbo kahit walang order book data. Kung hindi, tuwing
+    # bumabagsak ang koneksyon sa Polymarket ay maiiwan ang position
+    # hanggang settlement, na siyang mismong iniiwasan ng rule na ito.
     if share_price is None:
+        if period_over:
+            return Signal(
+                Action.EXIT,
+                reason="end-of-period force exit — walang order book data, "
+                       "huwag hawakan hanggang settlement",
+            )
         return Signal(Action.NONE, reason="waiting for data")
 
     change_pct = (share_price - position.entry_price) / position.entry_price * 100.0
@@ -250,8 +265,7 @@ def evaluate_exit(
                    f"(entry {position.entry_price:.2f} -> {share_price:.2f})",
         )
 
-    if (hours_into_period(now_utc, cfg.period_hours, cfg.anchor_offset_secs)
-            >= cfg.eod_exit_hour):
+    if period_over:
         return Signal(
             Action.EXIT,
             reason=f"end-of-period force exit ({change_pct:+.0f}%) — "
