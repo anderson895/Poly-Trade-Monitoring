@@ -27,6 +27,40 @@ PRICE_FLOOR = 0.03
 PRICE_CEIL = 0.50
 
 
+def usable_stretch_band(
+    min_share: float, max_share: float
+) -> tuple[float, float]:
+    """Daily-equivalent stretch range kung saan naaabot ang share price gate.
+
+    Ang presyo ay HINUHUGOT mula sa stretch, kaya ang pagpili ng stretch
+    band ay pagpili na rin ng price range — hindi sila magkahiwalay. Kapag
+    walang salubong ang dalawa, hindi makakapasok ang bot kahit kailan.
+
+    Sa default na 0.15-0.25 na gate, ang sagot ay 1.667%-2.333%.
+    """
+    lo = (PRICE_AT_ZERO - max_share) / PRICE_SLOPE_PER_PCT
+    hi = (PRICE_AT_ZERO - min_share) / PRICE_SLOPE_PER_PCT
+    return lo, hi
+
+
+def band_overlap_pct(
+    min_stretch: float, max_stretch: float,
+    min_share: float, max_share: float,
+) -> float:
+    """Ilang porsyento ng napiling stretch band ang aktwal na nakakapasok.
+
+    0.0 = imposibleng mag-trade; 100.0 = buong band ay magagamit.
+    """
+    lo, hi = usable_stretch_band(min_share, max_share)
+    width = max_stretch - min_stretch
+    if width <= 0:  # min >= max: baligtad ang band, walang tatawid
+        return 0.0
+    overlap = min(max_stretch, hi) - max(min_stretch, lo)
+    if overlap <= 0:
+        return 0.0
+    return min(100.0, overlap / width * 100.0)
+
+
 def estimate_otm_share_price(stretch_pct: float, scale: float = 1.0) -> float:
     """Estimated na presyo ng out-of-the-money share given ang BTC stretch.
 

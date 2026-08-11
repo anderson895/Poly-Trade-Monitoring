@@ -264,6 +264,13 @@ parehong **fraction ng period**, stretch = **sqrt-of-time** volatility:
     napapatunayan. Ipinapakita rin kung BAKIT hindi pumapasok.
   - 14 bagong tests (**145 total**)
 
+- **v1.3.3** (2026-08-11) — **babala sa Settings para sa stretch band**.
+  Live habang tina-type: pula kapag imposibleng makapasok, amber kapag
+  kakaunti lang ang magagamit, at sinasabi ang eksaktong saklaw na dapat
+  (1.67%–2.33% sa default na gate). Ang math ay nasa
+  `paper.usable_stretch_band` / `band_overlap_pct` — pure at nate-test,
+  hindi nakabaon sa UI. 11 bagong tests (**156 total**)
+
 **⚠️ Natuklasan sa production (v1.3.2):** ang stretch band at ang 15¢–25¢
 share price gate ay HINDI magkahiwalay — sa paper model ay
 `presyo = 0.50 − 0.15 × stretch`. Kailangang nasa **1.667%–2.333%** ang

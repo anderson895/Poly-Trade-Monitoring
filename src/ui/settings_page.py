@@ -26,7 +26,13 @@ from PySide6.QtWidgets import (
 )
 
 from src.core import secrets
+from src.execution.paper import (
+    band_overlap_pct,
+    estimate_otm_share_price,
+    usable_stretch_band,
+)
 from src.storage.db import Database
+from src.strategy.mean_reversion import StrategyConfig
 from src.ui import theme
 from src.ui.widgets import Card
 
@@ -226,6 +232,17 @@ class SettingsPage(QWidget):
         )
         add_field("Max Stretch — Death Trap Limit (%)", self._max_stretch)
 
+        # Ang stretch band at ang 15c-25c share price gate ay HINDI
+        # magkahiwalay — hinuhugot ang presyo mula sa stretch. Madaling
+        # makapili ng band na hindi kailanman makakapasok, at dating
+        # tahimik lang ang bot habang buwan-buwang walang trade.
+        self._band_note = QLabel()
+        self._band_note.setWordWrap(True)
+        form.addWidget(self._band_note)
+        self._min_stretch.valueChanged.connect(self._refresh_band_note)
+        self._max_stretch.valueChanged.connect(self._refresh_band_note)
+        self._refresh_band_note()
+
         self._profit = _spin(
             float(g("profit_target_pct", DEFAULTS["profit_target_pct"])), "%", 1000.0
         )
@@ -323,6 +340,50 @@ class SettingsPage(QWidget):
         root.addWidget(scroll)
 
     # ------------------------------------------------------------------ save
+
+    def _refresh_band_note(self) -> None:
+        """Sabihin agad kung magkasalungat ang stretch band at price gate.
+
+        Live habang binabago ang spinbox — hindi lang sa Save — dahil ang
+        pinakamadaling pagkakamali (ibaba ang stretch para "mas madalas
+        mag-trade") ay siyang sumisira nito.
+        """
+        cfg = StrategyConfig()
+        mn, mx = self._min_stretch.value(), self._max_stretch.value()
+        lo, hi = usable_stretch_band(cfg.min_share_price, cfg.max_share_price)
+        share_at_mn = estimate_otm_share_price(mn)
+        share_at_mx = estimate_otm_share_price(mx)
+        pct = band_overlap_pct(mn, mx, cfg.min_share_price, cfg.max_share_price)
+
+        if mn >= mx:
+            color, text = theme.RED, (
+                f"⛔ Baligtad ang band — ang minimum ({mn:.2f}%) ay hindi "
+                f"pwedeng mas mataas sa maximum ({mx:.2f}%). Walang trade."
+            )
+        elif pct == 0:
+            color, text = theme.RED, (
+                f"⛔ HINDI KAILANMAN MAKAKAPASOK ang bot sa {mn:.2f}–{mx:.2f}%. "
+                f"Sa band na ito ang share price ay {share_at_mx:.2f}–"
+                f"{share_at_mn:.2f}, samantalang {cfg.min_share_price:.2f}–"
+                f"{cfg.max_share_price:.2f} lang ang binibili. Kailangang "
+                f"tumawid ang band sa {lo:.2f}–{hi:.2f}%."
+            )
+        elif pct < 60:
+            color, text = theme.AMBER, (
+                f"⚠️ {pct:.0f}% lang ng band ang magagamit. Sa {lo:.2f}% "
+                f"pababa ay masyadong mahal ang share (>{cfg.max_share_price:.2f}); "
+                f"sa {hi:.2f}% pataas ay death-trap na. Subukan ang "
+                f"{max(mn, lo):.2f}–{min(mx, hi):.2f}%."
+            )
+        else:
+            color, text = theme.MUTED, (
+                f"✓ {pct:.0f}% ng band ay magagamit — share price "
+                f"{max(share_at_mx, cfg.min_share_price):.2f}–"
+                f"{min(share_at_mn, cfg.max_share_price):.2f}. Ang mabisang "
+                f"saklaw ay {lo:.2f}–{hi:.2f}%."
+            )
+        self._band_note.setText(text)
+        self._band_note.setStyleSheet(f"color: {color}")
 
     def _save(self) -> None:
         if self._pm_private.text().strip():

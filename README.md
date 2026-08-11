@@ -89,7 +89,7 @@ Requirements: Windows 10/11, internet connection.
 .\venv\Scripts\python.exe -m pytest tests -v
 ```
 
-**Expected: 145 passed.** Coverage:
+**Expected: 156 passed.** Coverage:
 
 | Test file | What it verifies |
 |---|---|
@@ -104,6 +104,7 @@ Requirements: Windows 10/11, internet connection.
 | `test_history.py` | Historical fetcher used by the backtest tooling: per-exchange column order and paging, range trimming, in-progress candle removal |
 | `test_feed_fallback.py` | Runtime source fallback: switching after repeated feed failures, respecting an explicit source choice, and not switching on a transient blip |
 | `test_book_outage.py` | Behaviour when the Polymarket order book is unreachable: the time-based exit still fires, skips are logged without spamming, and a blocked exit escalates to ERROR |
+| `test_stretch_band.py` | The stretch band ↔ share price gate relationship that drives the Settings warning, including the production band that could never trade |
 
 ### STEP 2 — Smoke tests (require internet)
 
@@ -259,7 +260,9 @@ To trade more often, raise **Max Stretch** (toward 2.333%) or widen the
 share price gate — not the other direction. The default 1.5–2.5% works, but
 note that its bottom (1.5–1.667%) and top (2.333–2.5%) are dead zones.
 
-Run `tests.backtest_timeframe` before committing to a band; its "bakit hindi
+The Settings page now flags this live as you type — a red note when the band
+can never trade, amber when most of it is dead. `tests.backtest_timeframe`
+also shows it; its "bakit hindi
 pumapasok" breakdown shows immediately whether the gates contradict.
 
 ---
@@ -323,7 +326,7 @@ src/
   execution/         # PaperExecutor (simulated), LiveExecutor (Polymarket CLOB), position resume
   storage/           # SQLite (trades, logs, settings, open position)
   ui/                # PySide6 UI: dashboard, charts, settings, trades, logs, stats, theme
-tests/               # 145 unit tests + smoke tests + verification utilities
+tests/               # 156 unit tests + smoke tests + verification utilities
 assets/              # UI icon assets (spinbox +/−, dropdown chevron)
 data/                # SQLite DB + app.log (auto-created, gitignored)
 run.bat              # Dev launcher
